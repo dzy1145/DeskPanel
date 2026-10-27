@@ -219,45 +219,24 @@ public sealed class MainWindow : Window
 			Margin = new Thickness(4.0, 0.0, 0.0, 0.0)
 		});
 		grid4.Children.Add(stackPanel3);
+		// 服务标题右侧的「+ 新增」
+		var addService = new Pill("+ 新增", Theme.Dim, delegate
+		{
+			AddServiceClicked();
+		});
+		addService.HorizontalAlignment = HorizontalAlignment.Right;
+		addService.VerticalAlignment = VerticalAlignment.Center;
+		Grid.SetColumn(addService, 1);
+		grid4.Children.Add(addService);
 		stackPanel2.Children.Add(grid4);
-		// 服务启动器：完全由 config.json 的 Services 决定
+
 		_servicesSection = new StackPanel
 		{
 			Margin = new Thickness(0.0, 8.0, 0.0, 0.0)
 		};
-		foreach (ServiceItem svc in _cfg.Services)
-		{
-			ServiceItem item = svc;
-			ServiceRow row = new ServiceRow(item.Name, hasExtra: false);
-			row.StartClicked += delegate
-			{
-				ServiceRunner.Start(item);
-				_hint.Text = "正在启动：" + item.Name;
-				ScheduleProbe(1500);
-			};
-			row.StopClicked += delegate
-			{
-				ServiceRunner.Stop(item);
-				_hint.Text = "已停止：" + item.Name;
-				ScheduleProbe(800);
-			};
-			_serviceRows.Add(row);
-			_servicesSection.Children.Add(row);
-		}
-		if (_cfg.Services.Count == 0)
-		{
-			_servicesSection.Children.Add(new TextBlock
-			{
-				Text = "在 config.json 的 Services 里添加服务条目（名字 + 启动命令 + 进程名）",
-				FontFamily = Theme.Ui,
-				FontSize = 9.5,
-				Foreground = Theme.Faint,
-				Margin = new Thickness(14.0, 2.0, 0.0, 0.0),
-				TextWrapping = TextWrapping.Wrap
-			});
-		}
 		stackPanel2.Children.Add(_servicesSection);
-		stackPanel2.Visibility = (_cfg.Services.Count > 0 ? Visibility.Visible : Visibility.Collapsed);
+		RebuildServiceRows();
+		stackPanel2.Visibility = Visibility.Visible;
 		Grid.SetRow(stackPanel2, 5);
 		grid2.Children.Add(stackPanel2);
 		Border element5 = Parts.Divider();
@@ -1038,6 +1017,10 @@ public sealed class MainWindow : Window
 	{
 		if (_cfg.Services.Count == 0)
 		{
+			if (_servicesDot != null)
+			{
+				_servicesDot.Fill = Theme.DotOff;
+			}
 			return;
 		}
 		DispatcherTimer timer = new DispatcherTimer
@@ -1080,6 +1063,125 @@ public sealed class MainWindow : Window
 		{
 			_servicesDot.Fill = (running > 0 ? Theme.Accent : Theme.DotOff);
 		}
+	}
+
+	// ------------------------------------------------------------ 服务条目的增删改
+
+	/// <summary>按当前配置重建服务行（新增/编辑/删除之后调用）。</summary>
+	private void RebuildServiceRows()
+	{
+		if (_servicesSection == null)
+		{
+			return;
+		}
+		_servicesSection.Children.Clear();
+		_serviceRows.Clear();
+
+		for (int i = 0; i < _cfg.Services.Count; i++)
+		{
+			int index = i;
+			ServiceItem item = _cfg.Services[i];
+			ServiceRow row = new ServiceRow(item.Name, hasExtra: false)
+			{
+				Background = Brushes.Transparent
+			};
+			row.StartClicked += delegate
+			{
+				ServiceRunner.Start(item);
+				_hint.Text = "正在启动：" + item.Name;
+				ScheduleProbe(1500);
+			};
+			row.StopClicked += delegate
+			{
+				ServiceRunner.Stop(item);
+				_hint.Text = "已停止：" + item.Name;
+				ScheduleProbe(800);
+			};
+			row.MouseRightButtonUp += delegate
+			{
+				ShowServiceMenu(index, row);
+			};
+			_serviceRows.Add(row);
+			_servicesSection.Children.Add(row);
+		}
+
+		if (_cfg.Services.Count == 0)
+		{
+			_servicesSection.Children.Add(new TextBlock
+			{
+				Text = "还没有服务。点右上角「+ 新增」添加一条（名字 + 启动命令 + 进程名）。",
+				FontFamily = Theme.Ui,
+				FontSize = 9.5,
+				Foreground = Theme.Faint,
+				Margin = new Thickness(14.0, 2.0, 0.0, 0.0),
+				TextWrapping = TextWrapping.Wrap
+			});
+		}
+
+		ScheduleProbe(0);
+	}
+
+	private void AddServiceClicked()
+	{
+		ServiceEditor editor = new ServiceEditor(new ServiceItem());
+		if (editor.ShowDialog() != true)
+		{
+			return;
+		}
+		_cfg.Services.Add(editor.Result);
+		_cfg.Save();
+		RebuildServiceRows();
+		_hint.Text = "已添加服务：" + editor.Result.Name;
+	}
+
+	private void ShowServiceMenu(int index, ServiceRow row)
+	{
+		if (index < 0 || index >= _cfg.Services.Count)
+		{
+			return;
+		}
+		new MiniMenu().Add("编辑…", delegate
+		{
+			EditService(index);
+		}).AddSeparator().Add("删除", delegate
+		{
+			DeleteService(index);
+		}).Show(row);
+	}
+
+	private void EditService(int index)
+	{
+		if (index < 0 || index >= _cfg.Services.Count)
+		{
+			return;
+		}
+		ServiceEditor editor = new ServiceEditor(_cfg.Services[index]);
+		if (editor.ShowDialog() != true)
+		{
+			return;
+		}
+		_cfg.Services[index] = editor.Result;
+		_cfg.Save();
+		RebuildServiceRows();
+		_hint.Text = "已保存服务：" + editor.Result.Name;
+	}
+
+	private void DeleteService(int index)
+	{
+		if (index < 0 || index >= _cfg.Services.Count)
+		{
+			return;
+		}
+		ServiceItem item = _cfg.Services[index];
+		ConfirmDialog dialog = new ConfirmDialog("删除服务", "把「" + item.Name + "」从服务列表移除？\n\n不会结束正在运行的进程。", "删除");
+		if (dialog.ShowDialog() != true)
+		{
+			return;
+		}
+		_cfg.Services.RemoveAt(index);
+		_cfg.Save();
+		RebuildServiceRows();
+		_hint.Text = "已移除：" + item.Name;
 	}
 
 	private void ReloadStartup()
@@ -1266,6 +1368,52 @@ public sealed class MainWindow : Window
 	internal void Quit()
 	{
 		Close();
+	}
+
+	/// <summary>托盘「重新载入配置」：把 config.json 的改动应用回来，不重启进程。</summary>
+	internal int PanelWidth => _cfg.Width;
+
+	internal void ReloadFromConfig()
+	{
+		try
+		{
+			Config fresh = Config.Load();
+			_cfg.Width = fresh.Width;
+			_cfg.RefreshMs = fresh.RefreshMs;
+			_cfg.Drives = fresh.Drives;
+			_cfg.Launcher = fresh.Launcher;
+			_cfg.Services = fresh.Services;
+			_cfg.Usage = fresh.Usage;
+			_cfg.Theme = fresh.Theme;
+			Width = Math.Clamp(fresh.Width, 220, 600);
+
+			_appPanel?.Reload();
+			RebuildServiceRows();
+			ReloadStartup();
+			_layer?.Place();
+			ApplyResponsiveLayout();
+			_hint.Text = "配置已重新载入";
+		}
+		catch (Exception ex)
+		{
+			Log.Ex(ex);
+			_hint.Text = "配置载入失败，详情见日志";
+		}
+	}
+
+	/// <summary>托盘里切换面板宽度（DIP）。</summary>
+	internal void SetPanelWidth(int width)
+	{
+		if (width < 220 || width > 600)
+		{
+			return;
+		}
+		_cfg.Width = width;
+		_cfg.Save();
+		Width = width;
+		_layer?.Place();
+		ApplyResponsiveLayout();
+		_hint.Text = "面板宽度：" + width;
 	}
 
 	internal void ReloadStartupItems()

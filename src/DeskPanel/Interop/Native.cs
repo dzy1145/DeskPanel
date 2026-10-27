@@ -289,6 +289,7 @@ internal static class Native
     public struct POINT { public int X, Y; }
 
     public const uint MF_STRING = 0x0000;
+    public const uint MF_POPUP = 0x00000010;
     public const uint MF_SEPARATOR = 0x0800;
     public const uint MF_CHECKED = 0x0008;
     public const uint MF_UNCHECKED = 0x0000;

@@ -12,11 +12,11 @@ Windows 10/11 x64 · WPF / .NET 8 · MIT · [变更记录](CHANGELOG.md)
 |---|---|
 | **硬件监控** | CPU 占用（PDH）、GPU 3D 引擎占用（PDH）、内存占用、指定盘符占用（含总容量）、CPU 温度（PDH `\Thermal Zone Information(*)\Temperature`，ACPI 热区，无需管理员）、GPU 温度与功耗（NVIDIA NVML，用户态 `nvml.dll`，无需管理员）。数值条带弹簧动画（`Omega=17/Zeta=0.58`），>75℃ 琥珀、>85℃ 红。 |
 | **常用软件** | 磁贴网格，点一下启动；支持从资源管理器 / 桌面拖 `exe` / `lnk` / 文件夹 / 网址进来添加；右键可编辑、删除、在资源管理器中显示；图标优先取 exe 内嵌图标（`ExtractIconEx`），退回 shell 图标，网址用 favicon；超出可视行数时内部滚轮滚动，不显示滚动条。 |
-| **服务启动器** | 完全由 config 的 `Services` 数组驱动（名字 + 启动命令 + 进程名 + 可选 `StopMatch`），每行显示运行中指示灯，点 `▶` 启动、点 `■` 停止。没配置就整块隐藏。 |
+| **服务启动器** | 完全由 config 的 `Services` 数组驱动（名字 + 启动命令 + 进程名 + 可选 `StopMatch`）。点标题右侧 `+ 新增` 直接在界面里添加（命令 / 参数 / 工作目录 / 进程名都有表单），右键条目可编辑 / 删除。每行显示运行中指示灯，点 `▶` 启动、点 `■` 停止。 |
 | **开机启动项** | 读取 HKCU / HKLM 的 Run 与 StartupApproved，逐条开关（改的是系统真实状态）；支持「+ 新增」（加注册表 Run 项或启动文件夹快捷方式）、右键禁用 / 启用 / 移除 / 打开位置；列表内部滚动，不显示滚动条。 |
 | **额度区**（可选，默认关闭） | 点「额度」可在两种视图间切换，带淡出 / 上浮动画：<br>a) OpenCode Go 订阅额度：5 小时 / 本周 / 本月三环，显示已用百分比与重置倒计时；<br>b) DeepSeek 官方余额：`GET https://api.deepseek.com/user/balance`，显示总余额 + 赠金 / 充值明细，≤5 元转琥珀色。<br>需要配 key 才能取数；`Enabled=false` 时整块隐藏，也不发网络请求。 |
 | **自适应布局** | 宽度按屏宽收敛（≤ 工作区 30%）；按工作区高度决定密度；装不下先减行、再整体等比缩小（最低 0.75），保证底部额度不被裁。插拔显示器 / 改缩放 / 虚拟显示器（远程桌面等）切换时自动重新贴边——用物理像素 +「鼠标所在屏」选屏，不依赖 WPF 的 DIP 工作区。 |
-| **其它** | 托盘图标（显示 / 隐藏 / 退出）、时钟、`Win+D` 后自动浮到桌面层、无边框圆角。配置存 `%LOCALAPPDATA%\DeskPanel\config.json`，日志 `app.log`。 |
+| **其它** | 托盘右键菜单：开机自启（勾选）、面板宽度（260/300/340/380 DIP）、刷新启动项、重新载入配置（不重启进程）、打开配置文件 / 配置目录、退出。时钟、`Win+D` 后自动浮到桌面层、无边框圆角。配置存 `%LOCALAPPDATA%\DeskPanel\config.json`，日志 `app.log`。 |
 
 ## 安装与使用
 
@@ -32,7 +32,7 @@ Windows 10/11 x64 · WPF / .NET 8 · MIT · [变更记录](CHANGELOG.md)
 ### 上手三件事
 
 - **加软件**：把 `exe` / `.lnk` / 文件夹 / 网址从桌面或资源管理器拖进「常用」区；也可以点「编辑」再点 `+` 手动添加。
-- **加服务**：编辑 `config.json` 的 `Services` 数组（见下），重启面板后每行出现一个开关。
+- **加服务**：点「服务」标题右侧的 `+ 新增`，填启动命令和进程名即可；也可以直接编辑 `config.json` 的 `Services` 数组（见下）。
 - **开机自启**：在「开机启动」区点「+ 新增」把自己加进去，或者把 `DeskPanel.exe` 的快捷方式放进启动文件夹。
 
 ### 从源码构建
@@ -50,7 +50,7 @@ dotnet publish src/DeskPanel/DeskPanel.csproj -c Release -r win-x64 `
 
 ## 配置
 
-配置文件：`%LOCALAPPDATA%\DeskPanel\config.json`，首次启动自动生成。手工修改后保存，重启面板生效（托盘 → 退出，再启动）。
+配置文件：`%LOCALAPPDATA%\DeskPanel\config.json`，首次启动自动生成。手工修改后，在托盘菜单点「重新载入配置」可即时生效的部分：常用磁贴、服务、额度开关与宽度；刷新间隔、主题、盘符等改动需要重启面板。
 
 ```json
 {
@@ -108,7 +108,7 @@ dotnet publish src/DeskPanel/DeskPanel.csproj -c Release -r win-x64 `
 | `Apps[].Target` | 启动目标：`exe`、`.lnk`、文件夹路径或网址。 |
 | `Apps[].Args` | 启动参数，没有就留空。 |
 | `Apps[].Icon` | 自定义图标文件；留空则自动取图标（exe 内嵌 → shell 图标，网址用 favicon）。 |
-| `Services` | 服务清单；数组为空则隐藏整个服务区。 |
+| `Services` | 服务清单；数组为空时服务区只留「+ 新增」入口和一行提示。 |
 | `Services[].Name` | 服务行标题。 |
 | `Services[].StartCommand` | 启动命令，支持 `.exe` / `.bat` / `.cmd` / `.ps1`。 |
 | `Services[].StartArgs` | 启动参数，没有就留空。 |

@@ -64,7 +64,7 @@ internal static class ServiceRunner
 
         try
         {
-            string command = Environment.ExpandEnvironmentVariables(item.StartCommand.Trim());
+            string command = Environment.ExpandEnvironmentVariables(item.StartCommand.Trim().Trim('"'));
             string workDir = string.IsNullOrWhiteSpace(item.WorkingDir)
                 ? SafeDir(command)
                 : Environment.ExpandEnvironmentVariables(item.WorkingDir);
@@ -85,9 +85,8 @@ internal static class ServiceRunner
                 return;
             }
 
-            // 其余当普通可执行文件；StartCommand 也可以直接写一条带参数的命令行
-            string file = File.Exists(command) ? command : command;
-            RunHidden(file, item.StartArgs ?? "", workDir);
+            // 其余当普通可执行文件（整条命令行不支持，参数请写在 StartArgs）
+            RunHidden(command, item.StartArgs ?? "", workDir);
         }
         catch { }
     }

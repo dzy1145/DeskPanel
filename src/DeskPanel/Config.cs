@@ -127,6 +127,13 @@ public sealed class Config
             try { File.Copy(FilePath, Path.Combine(Dir, "config.bad.json"), true); } catch { }
         }
 
+        // 走到这里说明现有配置读不出来：先留档再写默认值，别静默覆盖
+        try
+        {
+            if (File.Exists(FilePath)) File.Copy(FilePath, Path.Combine(Dir, "config.bad.json"), true);
+        }
+        catch { }
+
         var def = Defaults();
         def.Save();
         return def;
@@ -164,7 +171,10 @@ public sealed class Config
         }
         if (usage.Count > 0)
         {
-            if (usage["OpenCodeKey"] != null || usage["DeepSeekKey"] != null) usage["Enabled"] = true;
+            // 迁移时只有真的带上了 key 才打开额度区，避免升级后自动联网
+            bool hasKey = usage["OpenCodeKey"]?.GetValue<string>() is string k1 && k1.Length > 0
+                       || usage["DeepSeekKey"]?.GetValue<string>() is string k2 && k2.Length > 0;
+            usage["Enabled"] = hasKey;
             node["Usage"] = usage;
         }
 

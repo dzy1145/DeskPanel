@@ -246,6 +246,12 @@ internal sealed class AppPanel : StackPanel
     private bool _fileDragActive;
 
     /// <summary>窗口级拖放转交进来：paths + 屏幕坐标。返回是否收下。</summary>
+    /// <summary>外部改了配置后重建磁贴。</summary>
+    public void Reload()
+    {
+        Rebuild();
+    }
+
     public bool AcceptFiles(string[] paths, Point screenPoint)
     {
         if (paths == null || paths.Length == 0) return false;

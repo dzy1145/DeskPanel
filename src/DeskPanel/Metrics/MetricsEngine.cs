@@ -40,6 +40,7 @@ internal sealed class MetricsEngine : IDisposable
     private IntPtr _tempQuery, _tempCounter;
     private IntPtr _gpuQuery, _gpuCounter;
     private string _cpuPath = "";
+    private volatile bool _disposed;
     private int _tick;
     private double _lastGpu;
     private double? _gpuTemp, _gpuPower, _fan;
@@ -92,6 +93,7 @@ internal sealed class MetricsEngine : IDisposable
 
     private void Tick()
     {
+        if (_disposed) return;
         try
         {
             // GPU 的 PDH 数组枚举比 CPU 贵，2 秒取一次，中间沿用上次值
@@ -139,6 +141,7 @@ internal sealed class MetricsEngine : IDisposable
                 });
             }
 
+            if (_disposed) return;
             Sampled?.Invoke(s);
         }
         catch { }
@@ -248,13 +251,20 @@ internal sealed class MetricsEngine : IDisposable
 
     public void Dispose()
     {
+        _disposed = true;
         _timer?.Dispose();
-        try
+
+        // 关闭句柄前拿锁，避免和正在跑的采集撞上
+        lock (_gate)
         {
-            if (_cpuQuery != IntPtr.Zero) Native.PdhCloseQuery(_cpuQuery);
-            if (_gpuQuery != IntPtr.Zero) Native.PdhCloseQuery(_gpuQuery);
-            if (_tempQuery != IntPtr.Zero) Native.PdhCloseQuery(_tempQuery);
+            try
+            {
+                if (_cpuQuery != IntPtr.Zero) Native.PdhCloseQuery(_cpuQuery);
+                if (_gpuQuery != IntPtr.Zero) Native.PdhCloseQuery(_gpuQuery);
+                if (_tempQuery != IntPtr.Zero) Native.PdhCloseQuery(_tempQuery);
+                _cpuQuery = _gpuQuery = _tempQuery = IntPtr.Zero;
+            }
+            catch { }
         }
-        catch { }
     }
 }

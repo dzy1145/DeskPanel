@@ -213,6 +213,23 @@ public sealed class Config
         return dirty;
     }
 
+    /// <summary>列出所有可用的固定盘（给设置界面做多选）。</summary>
+    public static List<string> DetectDrivesAll()
+    {
+        var result = new List<string>();
+        try
+        {
+            foreach (var d in DriveInfo.GetDrives())
+            {
+                if (d.DriveType != DriveType.Fixed || !d.IsReady) continue;
+                result.Add(d.Name.TrimEnd('\\'));
+            }
+        }
+        catch { }
+        if (result.Count == 0) result.Add("C:");
+        return result;
+    }
+
     /// <summary>自动挑前两块固定盘（系统盘优先）。</summary>
     public static List<string> DetectDrives()
     {

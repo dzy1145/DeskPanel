@@ -72,6 +72,9 @@ internal sealed class Tray : IDisposable
         IntPtr menu = Native.CreatePopupMenu();
         try
         {
+            Native.AppendMenuW(menu, Native.MF_STRING, new IntPtr(7), "设置…");
+            Native.AppendMenuW(menu, Native.MF_SEPARATOR, IntPtr.Zero, null);
+
             bool auto = IsAutostart();
             Native.AppendMenuW(menu, Native.MF_STRING | (auto ? Native.MF_CHECKED : Native.MF_UNCHECKED), new IntPtr(1), "开机自启");
 
@@ -111,6 +114,9 @@ internal sealed class Tray : IDisposable
                     break;
                 case 4:
                     _window.Quit();
+                    break;
+                case 7:
+                    _window.OpenSettings();
                     break;
                 case 5:
                     _window.ReloadFromConfig();

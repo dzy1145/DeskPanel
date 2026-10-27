@@ -6,6 +6,10 @@ Windows 10/11 x64 · WPF / .NET 8 · MIT · [变更记录](CHANGELOG.md)
 
 ![DeskPanel：贴在桌面右侧的侧栏](docs/screenshot.png)
 
+面板右上角的齿轮（或托盘菜单「设置…」）打开可视化设置：
+
+![DeskPanel 设置：外观 / 监控 / 常用 / 服务 / 额度 / 关于](docs/settings.png)
+
 ## 功能
 
 | 模块 | 说明 |
@@ -16,7 +20,8 @@ Windows 10/11 x64 · WPF / .NET 8 · MIT · [变更记录](CHANGELOG.md)
 | **开机启动项** | 读取 HKCU / HKLM 的 Run 与 StartupApproved，逐条开关（改的是系统真实状态）；支持「+ 新增」（加注册表 Run 项或启动文件夹快捷方式）、右键禁用 / 启用 / 移除 / 打开位置；列表内部滚动，不显示滚动条。 |
 | **额度区**（可选，默认关闭） | 点「额度」可在两种视图间切换，带淡出 / 上浮动画：<br>a) OpenCode Go 订阅额度：5 小时 / 本周 / 本月三环，显示已用百分比与重置倒计时；<br>b) DeepSeek 官方余额：`GET https://api.deepseek.com/user/balance`，显示总余额 + 赠金 / 充值明细，≤5 元转琥珀色。<br>需要配 key 才能取数；`Enabled=false` 时整块隐藏，也不发网络请求。 |
 | **自适应布局** | 宽度按屏宽收敛（≤ 工作区 30%）；按工作区高度决定密度；装不下先减行、再整体等比缩小（最低 0.75），保证底部额度不被裁。插拔显示器 / 改缩放 / 虚拟显示器（远程桌面等）切换时自动重新贴边——用物理像素 +「鼠标所在屏」选屏，不依赖 WPF 的 DIP 工作区。 |
-| **其它** | 托盘右键菜单：开机自启（勾选）、面板宽度（260/300/340/380 DIP）、刷新启动项、重新载入配置（不重启进程）、打开配置文件 / 配置目录、退出。时钟、`Win+D` 后自动浮到桌面层、无边框圆角。配置存 `%LOCALAPPDATA%\DeskPanel\config.json`，日志 `app.log`。 |
+| **可视化设置** | 面板右上角齿轮或托盘「设置…」打开：左侧分区导航 + 卡片式表单，改动点「保存」才落盘。外观（宽度 / 主题 / 时钟 / 桌面层 / 亚克力 / 不抢焦点）、监控（刷新间隔、要显示的磁盘）、常用（列数 / 可见行数）、服务（列表增删改）、额度（开关 / 视图 / 两个 key，默认掩码可点「显示」）、关于（版本、开机自启、打开配置与日志）。 |
+| **其它** | 托盘右键菜单：设置…、开机自启（勾选）、面板宽度（260/300/340/380 DIP）、刷新启动项、重新载入配置（不重启进程）、打开配置文件 / 配置目录、退出。时钟、`Win+D` 后自动浮到桌面层、无边框圆角。配置存 `%LOCALAPPDATA%\DeskPanel\config.json`，日志 `app.log`。 |
 
 ## 安装与使用
 
@@ -34,6 +39,7 @@ Windows 10/11 x64 · WPF / .NET 8 · MIT · [变更记录](CHANGELOG.md)
 - **加软件**：把 `exe` / `.lnk` / 文件夹 / 网址从桌面或资源管理器拖进「常用」区；也可以点「编辑」再点 `+` 手动添加。
 - **加服务**：点「服务」标题右侧的 `+ 新增`，填启动命令和进程名即可；也可以直接编辑 `config.json` 的 `Services` 数组（见下）。
 - **开机自启**：在「开机启动」区点「+ 新增」把自己加进去，或者把 `DeskPanel.exe` 的快捷方式放进启动文件夹。
+- **调参数**：点面板右上角齿轮 → 设置，改宽度、刷新间隔、常用列数、服务、额度都在这里，不用手改 JSON。
 
 ### 从源码构建
 
@@ -44,13 +50,13 @@ dotnet publish src/DeskPanel/DeskPanel.csproj -c Release -r win-x64 `
   --self-contained true -p:PublishSingleFile=false -p:DebugType=none -o publish
 ```
 
-发布产物直接运行 `publish\DeskPanel.exe`。
+发布产物直接运行 `publish\DeskPanel.exe`；`DeskPanel.exe --settings` 可以直接打开设置（面板已在运行时也能把请求转发给已运行的实例）。
 
 > **必须 `PublishSingleFile=false`。** 单文件自解压在部分环境起不来（`Failure processing application bundle`），多文件发布已验证可用。分发时整份 `publish\` 目录一起打包，不要只拷 exe。
 
 ## 配置
 
-配置文件：`%LOCALAPPDATA%\DeskPanel\config.json`，首次启动自动生成。手工修改后，在托盘菜单点「重新载入配置」可即时生效的部分：常用磁贴、服务、额度开关与宽度；刷新间隔、主题、盘符等改动需要重启面板。
+配置文件：`%LOCALAPPDATA%\DeskPanel\config.json`，首次启动自动生成。**绝大多数选项可以直接在「设置」里改**，下面的 JSON 是同一份配置的对照说明。手工修改后，在托盘菜单点「重新载入配置」可即时生效的部分：常用磁贴、服务、额度开关与宽度；刷新间隔、主题、盘符等改动需要重启面板。
 
 ```json
 {

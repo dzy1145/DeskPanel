@@ -80,6 +80,8 @@ public sealed class MainWindow : Window
 
 	private Grid _usageBody;
 
+	private StackPanel _usageSection;
+
 	private UniformGrid _goView;
 
 	private FrameworkElement _dsView;
@@ -152,10 +154,15 @@ public sealed class MainWindow : Window
 		{
 			Width = GridLength.Auto
 		});
+		grid3.ColumnDefinitions.Add(new ColumnDefinition
+		{
+			Width = GridLength.Auto
+		});
 		_clock.FontFamily = Theme.Num;
 		_clock.FontSize = 17.0;
 		_clock.Foreground = Theme.Text;
-		_clock.Text = DateTime.Now.ToString("HH:mm");
+		_clock.Text = DateTime.Now.ToString(_cfg.ClockSeconds > 0 ? "HH:mm:ss" : "HH:mm");
+		_clock.Visibility = (_cfg.ShowClock ? Visibility.Visible : Visibility.Collapsed);
 		grid3.Children.Add(_clock);
 		_hint.FontFamily = Theme.Ui;
 		_hint.FontSize = 9.5;
@@ -163,8 +170,39 @@ public sealed class MainWindow : Window
 		_hint.VerticalAlignment = VerticalAlignment.Bottom;
 		_hint.Margin = new Thickness(0.0, 0.0, 0.0, 2.0);
 		_hint.Text = "Win+D";
-		Grid.SetColumn(_hint, 1);
+		Grid.SetColumn(_hint, 2);
 		grid3.Children.Add(_hint);
+
+		// 右上角齿轮：打开可视化设置
+		var gear = new Border
+		{
+			Width = 20,
+			Height = 20,
+			Margin = new Thickness(0, 0, 6, 0),
+			CornerRadius = new CornerRadius(6),
+			Background = Brushes.Transparent,
+			VerticalAlignment = VerticalAlignment.Center,
+			Cursor = Cursors.Hand,
+			ToolTip = "设置",
+			Child = new TextBlock
+			{
+				Text = "\u2699",
+				FontFamily = Theme.Ui,
+				FontSize = 11.5,
+				Foreground = Theme.Faint,
+				HorizontalAlignment = HorizontalAlignment.Center,
+				VerticalAlignment = VerticalAlignment.Center
+			}
+		};
+		gear.MouseEnter += delegate { gear.Background = Theme.Hover; };
+		gear.MouseLeave += delegate { gear.Background = Brushes.Transparent; };
+		gear.MouseLeftButtonUp += delegate(object s, MouseButtonEventArgs e)
+		{
+			e.Handled = true;
+			OpenSettings();
+		};
+		Grid.SetColumn(gear, 1);
+		grid3.Children.Add(gear);
 		grid2.Children.Add(grid3);
 		StackPanel stackPanel = new StackPanel
 		{
@@ -379,6 +417,7 @@ public sealed class MainWindow : Window
 		stackPanel5.Children.Add(_usageBody);
 		Grid.SetRow(stackPanel5, 10);
 		grid2.Children.Add(stackPanel5);
+		_usageSection = stackPanel5;
 		// 没启用额度区就整块隐藏，也不发请求
 		stackPanel5.Visibility = (_cfg.Usage.Enabled ? Visibility.Visible : Visibility.Collapsed);
 		OpenCodeUsage.Snapshot snapshot = OpenCodeUsage.LoadCache();
@@ -704,7 +743,8 @@ public sealed class MainWindow : Window
 		};
 		_clockTimer.Tick += delegate
 		{
-			_clock.Text = DateTime.Now.ToString("HH:mm");
+			_clock.Text = DateTime.Now.ToString(_cfg.ClockSeconds > 0 ? "HH:mm:ss" : "HH:mm");
+		_clock.Visibility = (_cfg.ShowClock ? Visibility.Visible : Visibility.Collapsed);
 		};
 		_clockTimer.Start();
 		ReloadStartup();
@@ -1373,25 +1413,93 @@ public sealed class MainWindow : Window
 	/// <summary>托盘「重新载入配置」：把 config.json 的改动应用回来，不重启进程。</summary>
 	internal int PanelWidth => _cfg.Width;
 
+	/// <summary>打开可视化设置窗口。</summary>
+	internal void OpenSettings()
+	{
+		var window = new SettingsWindow(this, _cfg);
+		window.ShowDialog();
+	}
+
+	/// <summary>把设置窗口里的草稿应用到运行中的面板。</summary>
+	internal void ApplySettings(Config draft)
+	{
+		bool drivesChanged = !(_cfg.Drives ?? new List<string>()).SequenceEqual(draft.Drives ?? new List<string>());
+		bool refreshChanged = _cfg.RefreshMs != draft.RefreshMs;
+		bool themeChanged = !string.Equals(_cfg.Theme, draft.Theme, StringComparison.OrdinalIgnoreCase);
+		bool layerChanged = _cfg.DesktopLayer != draft.DesktopLayer;
+		bool acrylicChanged = _cfg.Acrylic != draft.Acrylic;
+		bool noActivateChanged = _cfg.NoActivate != draft.NoActivate;
+
+		_cfg.Width = draft.Width;
+		_cfg.RefreshMs = draft.RefreshMs;
+		_cfg.Theme = draft.Theme;
+		_cfg.Acrylic = draft.Acrylic;
+		_cfg.ShowClock = draft.ShowClock;
+		_cfg.ClockSeconds = draft.ClockSeconds;
+		_cfg.DesktopLayer = draft.DesktopLayer;
+		_cfg.NoActivate = draft.NoActivate;
+		_cfg.Drives = draft.Drives;
+		_cfg.Launcher = draft.Launcher;
+		_cfg.Services = draft.Services;
+		_cfg.Usage = draft.Usage;
+		_cfg.Save();
+
+		// 采样参数或盘符变了就重建指标引擎：先建新的再丢旧的，避免中途失败留下已释放实例
+		if (refreshChanged || drivesChanged)
+		{
+			try
+			{
+				var next = new MetricsEngine(_cfg.RefreshMs, _cfg.Drives);
+				next.Sampled += OnSample;
+				var old = _metrics;
+				_metrics = next;
+				old?.Dispose();
+			}
+			catch (Exception ex) { Log.Ex(ex); }
+		}
+
+		// 额度区：显隐 + 定时器 + 默认视图
+		_mode = (string.IsNullOrWhiteSpace(_cfg.Usage.Mode) ? "go" : _cfg.Usage.Mode.Trim().ToLowerInvariant());
+		if (_usageSection != null)
+			_usageSection.Visibility = (_cfg.Usage.Enabled ? Visibility.Visible : Visibility.Collapsed);
+		if (_cfg.Usage.Enabled)
+		{
+			if (_usageTimer != null && !_usageTimer.IsEnabled) _usageTimer.Start();
+			ShowUsageBody(false);
+			RefreshUsage();
+			RefreshBalance();
+		}
+		else
+		{
+			_usageTimer?.Stop();
+		}
+
+		// 时钟
+		if (_clock != null)
+		{
+			_clock.Visibility = (_cfg.ShowClock ? Visibility.Visible : Visibility.Collapsed);
+			_clock.Text = DateTime.Now.ToString(_cfg.ClockSeconds > 0 ? "HH:mm:ss" : "HH:mm");
+		}
+
+		Width = Math.Clamp(_cfg.Width, 220, 600);
+		_appPanel?.Reload();
+		RebuildServiceRows();
+		ReloadStartup();
+		_layer?.Place();
+		ApplyResponsiveLayout();
+
+		if (themeChanged || layerChanged || drivesChanged || acrylicChanged || noActivateChanged)
+			_hint.Text = "已保存；主题 / 桌面层 / 亚克力 / 不抢焦点 / 盘符需重启面板";
+		else
+			_hint.Text = "设置已保存";
+	}
+
 	internal void ReloadFromConfig()
 	{
 		try
 		{
 			Config fresh = Config.Load();
-			_cfg.Width = fresh.Width;
-			_cfg.RefreshMs = fresh.RefreshMs;
-			_cfg.Drives = fresh.Drives;
-			_cfg.Launcher = fresh.Launcher;
-			_cfg.Services = fresh.Services;
-			_cfg.Usage = fresh.Usage;
-			_cfg.Theme = fresh.Theme;
-			Width = Math.Clamp(fresh.Width, 220, 600);
-
-			_appPanel?.Reload();
-			RebuildServiceRows();
-			ReloadStartup();
-			_layer?.Place();
-			ApplyResponsiveLayout();
+			ApplySettings(fresh);      // 复用同一套同步逻辑（它会对比新旧值决定提示语）
 			_hint.Text = "配置已重新载入";
 		}
 		catch (Exception ex)

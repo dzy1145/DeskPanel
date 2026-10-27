@@ -113,4 +113,67 @@ internal static class Kit
         btn.MouseLeftButtonUp += (_, e) => { e.Handled = true; onClick(); };
         return btn;
     }
+    /// <summary>密钥输入框：默认显示为圆点，右侧「显示 / 隐藏」可临时明文查看。</summary>
+    public static (Border host, PasswordBox box) Secret(string value)
+    {
+        var box = new PasswordBox
+        {
+            Password = value ?? "",
+            FontFamily = Theme.Ui,
+            FontSize = 13,
+            Foreground = Theme.Text,
+            Background = Brushes.Transparent,
+            BorderThickness = new Thickness(0),
+            CaretBrush = Theme.Text,
+            Padding = new Thickness(10, 7, 10, 7),
+            PasswordChar = '\u25CF',
+        };
+
+        var reveal = new Border
+        {
+            Padding = new Thickness(8, 3, 8, 3),
+            Margin = new Thickness(0, 0, 6, 0),
+            CornerRadius = new CornerRadius(7),
+            Background = Brushes.Transparent,
+            VerticalAlignment = VerticalAlignment.Center,
+            HorizontalAlignment = HorizontalAlignment.Right,
+            Cursor = Cursors.Hand,
+            Child = new TextBlock
+            {
+                Text = "显示",
+                FontFamily = Theme.Ui,
+                FontSize = 10.5,
+                Foreground = Theme.Faint,
+                VerticalAlignment = VerticalAlignment.Center,
+            },
+        };
+        bool shown = false;
+        reveal.MouseEnter += (_, _) => reveal.Background = Theme.Hover;
+        reveal.MouseLeave += (_, _) => reveal.Background = Brushes.Transparent;
+        reveal.MouseLeftButtonUp += (_, e) =>
+        {
+            e.Handled = true;
+            shown = !shown;
+            box.PasswordChar = shown ? '\0' : '\u25CF';
+            if (reveal.Child is TextBlock t) t.Text = shown ? "隐藏" : "显示";
+        };
+
+        var inner = new Grid();
+        box.Padding = new Thickness(10, 7, 46, 7);
+        inner.Children.Add(box);
+        inner.Children.Add(reveal);
+
+        var wrap = new Border
+        {
+            Background = Theme.Field,
+            BorderBrush = Theme.HairStrong,
+            BorderThickness = new Thickness(1),
+            CornerRadius = new CornerRadius(9),
+            MinWidth = 210,
+            Child = inner,
+        };
+        box.GotKeyboardFocus += (_, _) => wrap.BorderBrush = Theme.Frozen(0x55, 0x7A, 0xF0, 0xD8);
+        box.LostKeyboardFocus += (_, _) => wrap.BorderBrush = Theme.HairStrong;
+        return (wrap, box);
+    }
 }

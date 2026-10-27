@@ -153,8 +153,12 @@ internal sealed class AppPanel : StackPanel
 
     private void Rebuild()
     {
-        _board.Children.Clear();
+        // 设置里改了列数 / 可见行数也要跟着变，所以每次重建都重设一遍
+        _board.Columns = Math.Max(1, _cfg.Launcher.Columns);
         _board.CellHeight = CellH();
+        _scroll.MaxHeight = Rows() * CellH() + 6;
+        _board.Children.Clear();
+        _board.InvalidateMeasure();
         _scroll.ScrollToTop();
 
         foreach (var item in _cfg.Launcher.Apps.ToList())

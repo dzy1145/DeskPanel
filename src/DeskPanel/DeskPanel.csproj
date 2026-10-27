@@ -1,0 +1,37 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net8.0-windows</TargetFramework>
+    <UseWPF>true</UseWPF>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>disable</Nullable>
+    <LangVersion>latest</LangVersion>
+    <AssemblyName>DeskPanel</AssemblyName>
+    <RootNamespace>DeskPanel</RootNamespace>
+    <ApplicationManifest>app.manifest</ApplicationManifest>
+    <EnableDefaultApplicationDefinition>false</EnableDefaultApplicationDefinition>
+    <ApplicationIcon>Resources\app.ico</ApplicationIcon>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <SatelliteResourceLanguages>en</SatelliteResourceLanguages>
+    <Version>1.0.0</Version>
+    <DebugType>embedded</DebugType>
+
+    <!-- NuGet / 程序信息 -->
+    <AssemblyTitle>DeskPanel</AssemblyTitle>
+    <Product>DeskPanel</Product>
+    <Description>Windows 右侧常驻桌面侧栏：硬件监控、常用软件、服务启动器、开机启动项</Description>
+    <Company>DeskPanel contributors</Company>
+    <Authors>DeskPanel contributors</Authors>
+    <Copyright>MIT License</Copyright>
+    <PackageLicenseExpression>MIT</PackageLicenseExpression>
+    <RepositoryType>git</RepositoryType>
+    <NeutralLanguage>zh-Hans</NeutralLanguage>
+    <Deterministic>true</Deterministic>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Resource Include="Resources\app.ico" />
+  </ItemGroup>
+
+</Project>

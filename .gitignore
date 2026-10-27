@@ -1,0 +1,21 @@
+# 构建产物
+publish/
+**/bin/
+**/obj/
+*.user
+*.suo
+
+# 本机私有内容（个人配置、备份、调试脚本，不进公开仓库）
+_private/
+
+# 运行期数据（面板自己生成的日志/缓存）
+*.log
+usage-cache.json
+deepseek-balance.json
+diag.log
+config.json
+
+# 系统文件
+Thumbs.db
+desktop.ini
+.DS_Store

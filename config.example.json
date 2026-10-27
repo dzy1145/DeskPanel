@@ -1,0 +1,36 @@
+{
+  "Width": 300,
+  "RefreshMs": 1000,
+  "Theme": "ink",
+  "Acrylic": false,
+  "ShowClock": true,
+  "ClockSeconds": 0,
+  "DesktopLayer": true,
+  "NoActivate": false,
+  "Drives": [],
+  "Launcher": {
+    "Columns": 3,
+    "MaxRows": 3,
+    "Apps": [
+      { "Name": "记事本", "Target": "C:\\Windows\\notepad.exe", "Args": "", "Icon": "" },
+      { "Name": "任务管理器", "Target": "C:\\Windows\\System32\\Taskmgr.exe", "Args": "", "Icon": "" },
+      { "Name": "GitHub", "Target": "https://github.com", "Args": "", "Icon": "" }
+    ]
+  },
+  "Services": [
+    {
+      "Name": "示例：本地开发服务",
+      "StartCommand": "C:\\path\\to\\start.bat",
+      "StartArgs": "",
+      "WorkingDir": "C:\\path\\to",
+      "ProcessNames": ["node"],
+      "StopMatch": "server.js"
+    }
+  ],
+  "Usage": {
+    "Enabled": false,
+    "Mode": "go",
+    "OpenCodeKey": "",
+    "DeepSeekKey": ""
+  }
+}

@@ -335,8 +335,13 @@ internal sealed class SettingsWindow : Window
             chip.Changed += _ =>
             {
                 var selected = chips.Children.OfType<Widgets.Chip>().Where(c => c.IsOn).Select(c => c.Key).ToList();
-                // 一块都不选就退回自动检测，免得面板上没有磁盘行
-                _draft.Drives = selected.Count > 0 ? selected : Config.DetectDrives();
+                if (selected.Count == 0)
+                {
+                    // 不允许一块都不选：把刚点的这块勾回去，免得 UI 和配置不一致
+                    chip.IsOn = true;
+                    return;
+                }
+                _draft.Drives = selected;
             };
             chips.Children.Add(chip);
         }
@@ -631,8 +636,7 @@ internal sealed class SettingsWindow : Window
     {
         try
         {
-            _draft.Save();
-            _main.ApplySettings(_draft);
+            _main.ApplySettings(_draft);   // 里面会写盘并同步到运行中的面板
             Close();
         }
         catch (Exception ex)

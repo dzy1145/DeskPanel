@@ -29,6 +29,9 @@ public sealed class MainWindow : Window
 
 	private readonly Dictionary<string, MetricRow> _metricRows = new Dictionary<string, MetricRow>();
 
+	/// <summary>指标区的容器（盘符行热替换要用）。</summary>
+	private StackPanel _metricHost;
+
 	private readonly StackPanel _startupList = new StackPanel();
 
 	private ScrollViewer _startupScroll;
@@ -208,6 +211,7 @@ public sealed class MainWindow : Window
 		{
 			Margin = new Thickness(0.0, 16.0, 0.0, 0.0)
 		};
+		_metricHost = stackPanel;
 		AddMetric(stackPanel, "CPU", "cpu", Theme.Accent);
 		AddMetric(stackPanel, "GPU", "gpu", Theme.Purple);
 		AddMetric(stackPanel, "内存", "mem", Theme.Text);
@@ -671,6 +675,28 @@ public sealed class MainWindow : Window
 		}
 	}
 
+	/// <summary>按当前配置重建盘符行（盘符热更改用）。</summary>
+	private void RebuildDriveRows()
+	{
+		if (_metricHost == null)
+		{
+			return;
+		}
+
+		foreach (string key in _metricRows.Keys.Where(k => k.StartsWith("drive:", StringComparison.OrdinalIgnoreCase)).ToList())
+		{
+			if (_metricRows.TryGetValue(key, out MetricRow row))
+			{
+				_metricHost.Children.Remove(row);
+				_metricRows.Remove(key);
+			}
+		}
+
+		foreach (string drive in _cfg.Drives)
+		{
+			AddMetric(_metricHost, drive, "drive:" + drive, Theme.Frozen(byte.MaxValue, 184, 196, 214));
+		}
+	}
 	private void AddMetric(Panel host, string label, string key, Brush accent)
 	{
 		MetricRow metricRow = new MetricRow(label, accent);
@@ -1421,7 +1447,7 @@ public sealed class MainWindow : Window
 	}
 
 	/// <summary>把设置窗口里的草稿应用到运行中的面板。</summary>
-	internal void ApplySettings(Config draft)
+	internal void ApplySettings(Config draft, bool save = true)
 	{
 		bool drivesChanged = !(_cfg.Drives ?? new List<string>()).SequenceEqual(draft.Drives ?? new List<string>());
 		bool refreshChanged = _cfg.RefreshMs != draft.RefreshMs;
@@ -1442,7 +1468,13 @@ public sealed class MainWindow : Window
 		_cfg.Launcher = draft.Launcher;
 		_cfg.Services = draft.Services;
 		_cfg.Usage = draft.Usage;
-		_cfg.Save();
+		if (save) _cfg.Save();
+
+		// 盘符变了：先重建行，再按新盘重建引擎
+		if (drivesChanged)
+		{
+			RebuildDriveRows();
+		}
 
 		// 采样参数或盘符变了就重建指标引擎：先建新的再丢旧的，避免中途失败留下已释放实例
 		if (refreshChanged || drivesChanged)
@@ -1488,8 +1520,8 @@ public sealed class MainWindow : Window
 		_layer?.Place();
 		ApplyResponsiveLayout();
 
-		if (themeChanged || layerChanged || drivesChanged || acrylicChanged || noActivateChanged)
-			_hint.Text = "已保存；主题 / 桌面层 / 亚克力 / 不抢焦点 / 盘符需重启面板";
+		if (themeChanged || layerChanged || acrylicChanged || noActivateChanged)
+			_hint.Text = "已保存；主题 / 桌面层 / 亚克力 / 不抢焦点需重启面板";
 		else
 			_hint.Text = "设置已保存";
 	}
@@ -1499,7 +1531,7 @@ public sealed class MainWindow : Window
 		try
 		{
 			Config fresh = Config.Load();
-			ApplySettings(fresh);      // 复用同一套同步逻辑（它会对比新旧值决定提示语）
+			ApplySettings(fresh, save: false);   // 复用同一套同步逻辑；Load 已经读过了，不必再写一次
 			_hint.Text = "配置已重新载入";
 		}
 		catch (Exception ex)

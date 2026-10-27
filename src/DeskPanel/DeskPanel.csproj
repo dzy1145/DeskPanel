@@ -14,7 +14,7 @@
     <ApplicationIcon>Resources\app.ico</ApplicationIcon>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     <SatelliteResourceLanguages>en</SatelliteResourceLanguages>
-    <Version>1.2.0</Version>
+    <Version>1.2.1</Version>
     <DebugType>embedded</DebugType>
 
     <!-- NuGet / 程序信息 -->

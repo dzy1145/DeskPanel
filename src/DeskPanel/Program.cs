@@ -25,15 +25,21 @@ internal static class Program
             // 面板已在运行：把请求转发过去，别静默退出
             if (wantsSettings)
             {
-                try
+                // 刚开机时另一个实例可能还在建事件，重试几次再放弃
+                for (int i = 0; i < 10; i++)
                 {
-                    if (EventWaitHandle.TryOpenExisting(SettingsEventName, out var handle))
+                    try
                     {
-                        handle.Set();
-                        handle.Dispose();
+                        if (EventWaitHandle.TryOpenExisting(SettingsEventName, out var handle))
+                        {
+                            handle.Set();
+                            handle.Dispose();
+                            return;
+                        }
                     }
+                    catch { }
+                    Thread.Sleep(100);
                 }
-                catch { }
             }
             return;
         }
@@ -57,8 +63,19 @@ internal static class Program
             Log.Write("==== start ====");
             var window = new MainWindow();
 
-            // 外部再执行一次 --settings 时，用命名事件唤起设置窗口
-            var wake = new EventWaitHandle(false, EventResetMode.AutoReset, SettingsEventName);
+            // 外部再执行一次 --settings 时，用命名事件唤起设置窗口；建不出来也不影响面板本身
+            EventWaitHandle wake = null;
+            try
+            {
+                wake = new EventWaitHandle(false, EventResetMode.AutoReset, SettingsEventName);
+            }
+            catch (Exception ex)
+            {
+                Log.Ex(ex);
+            }
+
+            if (wake != null)
+            {
             var listener = new Thread(() =>
             {
                 while (true)
@@ -88,6 +105,7 @@ internal static class Program
                 Name = "DeskPanel.SettingsListener",
             };
             listener.Start();
+            }
 
             if (wantsSettings)
             {

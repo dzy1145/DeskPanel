@@ -312,7 +312,11 @@ internal static class Widgets
 
         public event Action<bool> Changed;
 
-        public bool IsOn => _on;
+        public bool IsOn
+        {
+            get => _on;
+            set { if (_on == value) return; _on = value; Sync(); }
+        }
         public string Key { get; }
 
         public Chip(string key, bool on)

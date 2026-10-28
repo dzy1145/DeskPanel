@@ -36,9 +36,7 @@ public sealed class MainWindow : Window
 
 	private ScrollViewer _startupScroll;
 
-	private TextBlock _startupHint;
 
-	private TextBlock _startupTitle;
 
 	private FrameworkElement _rootUi;
 
@@ -297,10 +295,6 @@ public sealed class MainWindow : Window
 		{
 			Height = new GridLength(1.0, GridUnitType.Star)
 		});
-		grid5.RowDefinitions.Add(new RowDefinition
-		{
-			Height = GridLength.Auto
-		});
 		Grid grid6 = new Grid();
 		grid6.ColumnDefinitions.Add(new ColumnDefinition
 		{
@@ -310,8 +304,7 @@ public sealed class MainWindow : Window
 		{
 			Width = GridLength.Auto
 		});
-		_startupTitle = Parts.Section("开机启动");
-		grid6.Children.Add(_startupTitle);
+		grid6.Children.Add(Parts.Section("开机启动"));
 		Pill addStartup = null;
 		addStartup = new Pill("+ 新增", Theme.Dim, delegate
 		{
@@ -332,16 +325,7 @@ public sealed class MainWindow : Window
 		Grid.SetRow(scrollViewer, 1);
 		_startupScroll = scrollViewer;
 		grid5.Children.Add(scrollViewer);
-		_startupHint = new TextBlock
-		{
-			FontFamily = Theme.Ui,
-			FontSize = 9,
-			Foreground = Theme.Faint,
-			Margin = new Thickness(14, 4, 0, 0),
-			Visibility = Visibility.Collapsed,
-		};
-		Grid.SetRow(_startupHint, 2);
-		grid5.Children.Add(_startupHint);
+
 		Grid.SetRow(grid5, 7);
 		grid2.Children.Add(grid5);
 		StackPanel stackPanel5 = new StackPanel
@@ -1269,20 +1253,6 @@ public sealed class MainWindow : Window
 		_hint.Text = "已移除：" + item.Name;
 	}
 
-	/// <summary>列表超出可视行数时给一句提示，避免以为只有这些。</summary>
-	private void UpdateStartupHint()
-	{
-		if (_startupHint == null || _startupScroll == null) return;
-
-		int count = _startupList.Children.Count;
-		int visible = Math.Max(1, (int)(_startupScroll.MaxHeight / 28));
-
-		if (_startupTitle != null)
-			_startupTitle.Text = count > visible ? $"开机启动 · {count}（滚轮查看更多）" : "开机启动";
-
-		if (_startupHint != null)
-			_startupHint.Visibility = Visibility.Collapsed;
-	}
 
 	private void ReloadStartup()
 	{
@@ -1333,7 +1303,6 @@ public sealed class MainWindow : Window
 		}
 
 		_startupScroll?.ScrollToTop();
-		UpdateStartupHint();
 	}
 
 	private void ShowStartupAddMenu(UIElement anchor)

@@ -12,6 +12,12 @@ public sealed class StartupItem
     public string Source { get; set; } = "Run";     // Run | 文件夹
     public bool Enabled { get; set; }
     public string LinkPath { get; set; } = "";      // 启动文件夹项用
+
+    /// <summary>打包应用（MSIX）的启动任务：包家族名，例如 OpenAI.Codex_2p2nqsd0c76g0。</summary>
+    public string PackagedFamily { get; set; } = "";
+
+    /// <summary>打包应用的启动任务 id，例如 App。</summary>
+    public string PackagedTask { get; set; } = "";
 }
 
 /// <summary>
@@ -22,6 +28,9 @@ public static class StartupStore
     private const string RunKey = @"Software\Microsoft\Windows\CurrentVersion\Run";
     private const string ApprovedRun = @"Software\Microsoft\Windows\CurrentVersion\Explorer\StartupApproved\Run";
     private const string ApprovedFolder = @"Software\Microsoft\Windows\CurrentVersion\Explorer\StartupApproved\StartupFolder";
+
+    // 打包应用（MSIX/UWP）的开机启动任务：任务管理器里显示的那些「应用」自启项就在这
+    private const string AppModelRoot = @"Software\Classes\Local Settings\Software\Microsoft\Windows\CurrentVersion\AppModel\SystemAppData";
 
     public static List<StartupItem> Load()
     {
@@ -93,8 +102,58 @@ public static class StartupStore
         }
         catch { }
 
-        return list.OrderBy(x => x.Source).ThenBy(x => x.Name).ToList();
+        // 打包应用（MSIX/UWP）的启动任务：Task Manager 里「应用」那一类自启项
+        try
+        {
+            using var root = Registry.CurrentUser.OpenSubKey(AppModelRoot, false);
+            if (root != null)
+            {
+                foreach (string family in root.GetSubKeyNames())
+                {
+                    using var pkg = root.OpenSubKey(family, false);
+                    if (pkg == null) continue;
+
+                    string[] tasks = pkg.GetSubKeyNames();
+                    int usable = 0;
+                    foreach (string task in tasks)
+                    {
+                        using var probe = pkg.OpenSubKey(task, false);
+                        if (probe?.GetValue("State") is int s0 && s0 != 0) usable++;
+                    }
+
+                    foreach (string task in tasks)
+                    {
+                        using var taskKey = pkg.OpenSubKey(task, false);
+                        object raw = taskKey?.GetValue("State");
+                        if (raw is not int state) continue;
+                        // 0 = 应用自己声明默认不启用的任务，任务管理器也不列，跳过以免刷屏
+                        if (state == 0) continue;
+
+                        list.Add(new StartupItem
+                        {
+                            Name = FriendlyPackageName(family) + (usable > 1 ? " · " + task : ""),
+                            Command = "应用包启动任务：" + family + "\\" + task,
+                            Source = "应用",
+                            PackagedFamily = family,
+                            PackagedTask = task,
+                            Enabled = state == 2,      // 2=启用，1=用户禁用，3=策略禁用
+                        });
+                    }
+                }
+            }
+        }
+        catch { }
+
+        // 和任务管理器一样按名字排，混排 Run / 启动文件夹 / 应用启动任务
+        return list.OrderBy(x => x.Name, StringComparer.CurrentCultureIgnoreCase).ToList();
     }
+
+    private static int SourceRank(string source) => source switch
+    {
+        "Run" => 0,
+        "文件夹" => 1,
+        _ => 2,
+    };
 
     private static bool ReadEnabled(RegistryKey approved, string valueName)
     {
@@ -107,9 +166,14 @@ public static class StartupStore
         return true;                       // 没有记录 = 启用
     }
 
-    /// <summary>写 StartupApproved。成功返回 null，失败返回错误原因。</summary>
+    /// <summary>写 StartupApproved / 应用启动任务 State。成功返回 null，失败返回错误原因。</summary>
     public static string SetEnabled(StartupItem item, bool enabled)
     {
+        if (!string.IsNullOrWhiteSpace(item.PackagedFamily))
+        {
+            return SetPackagedTask(item, enabled);
+        }
+
         string sub = item.Source == "Run" ? ApprovedRun : ApprovedFolder;
         string name = item.Source == "Run" ? item.Name : Path.GetFileName(item.LinkPath);
 
@@ -244,6 +308,11 @@ public static class StartupStore
     {
         try
         {
+            if (!string.IsNullOrWhiteSpace(item.PackagedFamily))
+            {
+                return "这是应用自带的开机启动项，请在应用自己的设置里关闭（面板只能禁用它）";
+            }
+
             if (item.Source == "Run")
             {
                 using var run = Registry.CurrentUser.OpenSubKey(RunKey, true);
@@ -268,6 +337,91 @@ public static class StartupStore
             Log.Write($"startup: 移除失败 {item.Name} :: {ex.GetType().Name} {ex.Message}");
             return ex.GetType().Name + " " + ex.Message;
         }
+    }
+
+    /// <summary>写打包应用的启动任务状态：2=启用，1=用户禁用。</summary>
+    private static string SetPackagedTask(StartupItem item, bool enabled)
+    {
+        try
+        {
+            string path = AppModelRoot + "\\" + item.PackagedFamily + "\\" + item.PackagedTask;
+            using var key = Registry.CurrentUser.OpenSubKey(path, true);
+            if (key == null) return "打不开启动任务键（可能需要管理员）";
+
+            key.SetValue("State", enabled ? 2 : 1, RegistryValueKind.DWord);
+
+            object readBack = key.GetValue("State");
+            if (readBack is not int state || state != (enabled ? 2 : 1))
+                return "写入后读回不一致（可能被系统策略拦下）";
+
+            Log.Write($"startup: {item.Name} -> {(enabled ? "启用" : "禁用")} ok（应用启动任务）");
+            return null;
+        }
+        catch (UnauthorizedAccessException)
+        {
+            return "权限不足。请托盘右键退出，再双击桌面「系统监控 DeskPanel」重新启动";
+        }
+        catch (Exception ex)
+        {
+            Log.Write($"startup: {item.Name} 写启动任务失败 :: {ex.GetType().Name} {ex.Message}");
+            return ex.GetType().Name + " " + ex.Message;
+        }
+    }
+
+    private static readonly Dictionary<string, string> PackageNameCache = new(StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>把包家族名换成人类可读的名字：读 AppxManifest 的 DisplayName，失败就用包名前缀。</summary>
+    private static string FriendlyPackageName(string family)
+    {
+        if (PackageNameCache.TryGetValue(family, out string cached)) return cached;
+
+        string fallback = family.Split('_')[0];
+        string result = fallback;
+
+        try
+        {
+            string prefix = fallback + "_";
+            string root = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles), "WindowsApps");
+            if (Directory.Exists(root))
+            {
+                foreach (string dir in Directory.EnumerateDirectories(root, prefix + "*"))
+                {
+                    string manifest = Path.Combine(dir, "AppxManifest.xml");
+                    if (!File.Exists(manifest)) continue;
+
+                    string text = File.ReadAllText(manifest);
+                    var match = System.Text.RegularExpressions.Regex.Match(text, "<DisplayName>(.*?)</DisplayName>",
+                        System.Text.RegularExpressions.RegexOptions.Singleline);
+                    if (match.Success)
+                    {
+                        string name = match.Groups[1].Value.Trim();
+                        if (!name.StartsWith("ms-resource:", StringComparison.OrdinalIgnoreCase) && name.Length > 0)
+                        {
+                            result = name;
+                            break;
+                        }
+                    }
+                }
+            }
+        }
+        catch { }
+
+        // 兜底：家族名通常长这样 OpenAI.Codex / AdvancedMicroDevicesInc-2.AMDRadeonSoftware，
+        // 取最后一段，再把常见后缀去掉，至少比一串包名好看
+        if (result == fallback && fallback.Contains('.'))
+        {
+            result = fallback.Substring(fallback.LastIndexOf('.') + 1);
+        }
+        if (result.EndsWith("Software", StringComparison.OrdinalIgnoreCase) && result.Length > 10)
+        {
+            result = result.Substring(0, result.Length - "Software".Length);
+        }
+
+        // 名字太长就截断，面板一行放不下
+        if (result.Length > 22) result = result.Substring(0, 20) + "…";
+
+        PackageNameCache[family] = result;
+        return result;
     }
 
     private static string Sanitize(string name)

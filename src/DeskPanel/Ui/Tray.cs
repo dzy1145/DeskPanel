@@ -94,6 +94,9 @@ internal sealed class Tray : IDisposable
             Native.AppendMenuW(menu, Native.MF_STRING, new IntPtr(3), "打开配置文件");
             Native.AppendMenuW(menu, Native.MF_STRING, new IntPtr(6), "打开配置目录");
             Native.AppendMenuW(menu, Native.MF_SEPARATOR, IntPtr.Zero, null);
+            string updateLabel = _window.HasUpdate ? "有新版 " + _window.LatestVersion + " · 去下载" : "检查更新…";
+            Native.AppendMenuW(menu, Native.MF_STRING, new IntPtr(8), updateLabel);
+            Native.AppendMenuW(menu, Native.MF_SEPARATOR, IntPtr.Zero, null);
             Native.AppendMenuW(menu, Native.MF_STRING, new IntPtr(4), "退出");
 
             Native.GetCursorPos(out var pt);
@@ -114,6 +117,9 @@ internal sealed class Tray : IDisposable
                     break;
                 case 4:
                     _window.Quit();
+                    break;
+                case 8:
+                    _ = _window.CheckUpdateNow();
                     break;
                 case 7:
                     _window.OpenSettings();

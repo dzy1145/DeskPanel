@@ -19,6 +19,7 @@ using DeskPanel.Interop;
 using DeskPanel.Metrics;
 using DeskPanel.Services;
 using DeskPanel.Startup;
+using DeskPanel.Update;
 using Microsoft.Win32;
 
 namespace DeskPanel.Ui;
@@ -68,6 +69,21 @@ public sealed class MainWindow : Window
 	private DispatcherTimer _startupTimer;
 
 	private DispatcherTimer _usageTimer;
+
+	/// <summary>自动检测更新的定时器（间隔取配置）。</summary>
+	private DispatcherTimer _updateTimer;
+
+	/// <summary>启动后那一次延迟检测（Loaded 可能触发多次，用它做幂等）。</summary>
+	private DispatcherTimer _updateFirst;
+
+	private bool _updateBusy;
+
+	/// <summary>最近一次检测结果。</summary>
+	private UpdateInfo _updateInfo;
+
+	/// <summary>头部齿轮与新版本小红点。</summary>
+	private Border _gear;
+	private Border _gearDot;
 
 	private UsageRing _ring5h;
 
@@ -179,6 +195,30 @@ public sealed class MainWindow : Window
 		grid3.Children.Add(_hint);
 
 		// 右上角齿轮：打开可视化设置
+		_gearDot = new Border
+		{
+			Width = 5,
+			Height = 5,
+			CornerRadius = new CornerRadius(3),
+			Background = Theme.Accent,
+			HorizontalAlignment = HorizontalAlignment.Right,
+			VerticalAlignment = VerticalAlignment.Top,
+			Margin = new Thickness(0, 0, 0, 0),
+			Visibility = Visibility.Collapsed,
+		};
+
+		var gearContent = new Grid();
+		gearContent.Children.Add(new TextBlock
+		{
+			Text = "\u2699",
+			FontFamily = Theme.Ui,
+			FontSize = 11.5,
+			Foreground = Theme.Faint,
+			HorizontalAlignment = HorizontalAlignment.Center,
+			VerticalAlignment = VerticalAlignment.Center
+		});
+		gearContent.Children.Add(_gearDot);
+
 		var gear = new Border
 		{
 			Width = 20,
@@ -189,16 +229,9 @@ public sealed class MainWindow : Window
 			VerticalAlignment = VerticalAlignment.Center,
 			Cursor = Cursors.Hand,
 			ToolTip = "设置",
-			Child = new TextBlock
-			{
-				Text = "\u2699",
-				FontFamily = Theme.Ui,
-				FontSize = 11.5,
-				Foreground = Theme.Faint,
-				HorizontalAlignment = HorizontalAlignment.Center,
-				VerticalAlignment = VerticalAlignment.Center
-			}
+			Child = gearContent,
 		};
+		_gear = gear;
 		gear.MouseEnter += delegate { gear.Background = Theme.Hover; };
 		gear.MouseLeave += delegate { gear.Background = Brushes.Transparent; };
 		gear.MouseLeftButtonUp += delegate(object s, MouseButtonEventArgs e)
@@ -797,6 +830,123 @@ public sealed class MainWindow : Window
 		};
 		_botTimer.Start();
 		ScheduleProbe(300);
+		StartUpdateTimer();
+	}
+
+	/// <summary>启动后延迟查一次，之后按配置间隔查。</summary>
+	private void StartUpdateTimer()
+	{
+		if (_cfg.Update == null || !_cfg.Update.Enabled) return;
+		// Loaded 可能被触发多次（贴桌面层会重新 Show），这里必须幂等
+		if (_updateTimer != null || _updateFirst != null) return;
+
+		int hours = Math.Clamp(_cfg.Update.CheckHours, 1, 24 * 7);
+		_updateTimer = new DispatcherTimer { Interval = TimeSpan.FromHours(hours) };
+		_updateTimer.Tick += delegate { _ = CheckUpdateAsync(false); };
+		_updateTimer.Start();
+
+		// 启动 12 秒后再查，别和指标 / 额度抢启动那一下
+		_updateFirst = new DispatcherTimer { Interval = TimeSpan.FromSeconds(12.0) };
+		_updateFirst.Tick += delegate
+		{
+			_updateFirst.Stop();
+			_ = CheckUpdateAsync(false);
+		};
+		_updateFirst.Start();
+	}
+
+	internal bool HasUpdate => _updateInfo != null && _updateInfo.HasUpdate;
+
+	internal string LatestVersion => _updateInfo?.Latest ?? "";
+
+	internal string UpdateStatusText
+	{
+		get
+		{
+			if (_updateInfo == null) return "未检测";
+			if (!_updateInfo.Ok) return "检测失败：" + _updateInfo.Error;
+			return _updateInfo.HasUpdate
+				? $"有新版本 {_updateInfo.Latest}（当前 {_updateInfo.Current}）"
+				: "已是最新 " + _updateInfo.Current;
+		}
+	}
+
+	/// <summary>手动检查：有新版就弹一次确认，可以跳下载页。</summary>
+	internal async Task CheckUpdateNow()
+	{
+		UpdateInfo info = await CheckUpdateAsync(true);
+		if (info == null || !info.Ok || !info.HasUpdate) return;
+		OfferUpdate(info);
+	}
+
+	private async Task<UpdateInfo> CheckUpdateAsync(bool interactive)
+	{
+		if (_updateBusy) return _updateInfo;
+		_updateBusy = true;
+		try
+		{
+			return await CheckUpdateCoreAsync(interactive);
+		}
+		finally
+		{
+			_updateBusy = false;
+		}
+	}
+
+	private async Task<UpdateInfo> CheckUpdateCoreAsync(bool interactive)
+	{
+		UpdateInfo info;
+		try
+		{
+			info = await UpdateChecker.CheckAsync();
+		}
+		catch (Exception ex)
+		{
+			Log.Ex(ex);
+			return null;
+		}
+
+		_updateInfo = info;
+		if (_gearDot != null)
+		{
+			_gearDot.Visibility = info.Ok && info.HasUpdate ? Visibility.Visible : Visibility.Collapsed;
+		}
+		if (info.Ok)
+		{
+			Log.Write($"update: 当前 {info.Current}，最新 {info.Latest}，有新版本={info.HasUpdate}");
+		}
+		if (info.Ok && info.HasUpdate)
+		{
+			_hint.Text = "新版 " + info.Latest;
+		}
+		else if (interactive)
+		{
+			_hint.Text = info.Ok ? "已是最新 " + info.Current : "检查更新失败";
+		}
+		return info;
+	}
+
+	/// <summary>设置页点了「去下载」：用最近一次检测结果弹确认。</summary>
+	internal void OfferUpdateForLatest() => OfferUpdate(_updateInfo);
+
+	/// <summary>问一句要不要打开下载页（界面里只在手动检查时用）。</summary>
+	internal void OfferUpdate(UpdateInfo info)
+	{
+		if (info == null || !info.HasUpdate) return;
+		string message = $"当前 {info.Current}，最新 {info.Latest}";
+		if (!string.IsNullOrWhiteSpace(info.Notes)) message += "\n\n" + info.Notes;
+		var dialog = new ConfirmDialog("发现新版本", message, "去下载");
+		if (dialog.ShowDialog() == true)
+		{
+			try
+			{
+				Process.Start(new ProcessStartInfo(info.ReleaseUrl) { UseShellExecute = true });
+			}
+			catch (Exception ex)
+			{
+				Log.Ex(ex);
+			}
+		}
 	}
 
 	internal void ApplyResponsiveLayout()

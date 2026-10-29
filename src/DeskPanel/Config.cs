@@ -60,6 +60,15 @@ public sealed class UsageCfg
     public string DeepSeekKey { get; set; } = "";
 }
 
+/// <summary>自动检测更新。</summary>
+public sealed class UpdateCfg
+{
+    /// <summary>是否在启动后和每隔几小时查一次 GitHub Release。</summary>
+    public bool Enabled { get; set; } = true;
+
+    /// <summary>检测间隔（小时），默认 6。</summary>
+    public int CheckHours { get; set; } = 6;
+}
 public sealed class Config
 {
     public int Width { get; set; } = 300;
@@ -87,6 +96,8 @@ public sealed class Config
     public List<ServiceItem> Services { get; set; } = new();
 
     public UsageCfg Usage { get; set; } = new();
+
+    public UpdateCfg Update { get; set; } = new();
 
     [JsonIgnore] public bool Migrated { get; private set; }
 
@@ -195,9 +206,11 @@ public sealed class Config
         Launcher.Apps ??= new();
         Services ??= new();
         Usage ??= new UsageCfg();
+        Update ??= new UpdateCfg();
 
         if (Launcher.Columns < 1 || Launcher.Columns > 8) { Launcher.Columns = 3; dirty = true; }
         if (Launcher.MaxRows < 1 || Launcher.MaxRows > 8) { Launcher.MaxRows = 3; dirty = true; }
+        if (Update.CheckHours < 1 || Update.CheckHours > 168) { Update.CheckHours = 6; dirty = true; }
 
         Services.RemoveAll(s => s == null || string.IsNullOrWhiteSpace(s.Name));
         foreach (var s in Services) s.ProcessNames ??= new();

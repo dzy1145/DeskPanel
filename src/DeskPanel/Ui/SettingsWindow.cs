@@ -554,14 +554,26 @@ internal sealed class SettingsWindow : Window
             {
                 SectionTitle("关于", "DeskPanel · Windows 桌面侧栏"),
                 Widgets.Card(
-                    Widgets.Row("版本", null, new TextBlock
+                    Widgets.Row("版本", _main.UpdateStatusText, new TextBlock
                     {
-                        Text = version,
+                        Text = "v" + version,
                         FontFamily = Theme.Num,
                         FontSize = 12.5,
                         Foreground = Theme.Text,
                         VerticalAlignment = VerticalAlignment.Center,
                     }),
+                    Widgets.Row("自动检测更新", null, AutoUpdateSwitch()),
+                    Widgets.Row("检测间隔", "小时；默认 6", AutoUpdateHours()),
+                    Widgets.Row("检查更新", null, Kit.Ghost(_main.HasUpdate ? "去下载" : "检查", async () =>
+                    {
+                        if (_main.HasUpdate)
+                        {
+                            _main.OfferUpdateForLatest();
+                            return;
+                        }
+                        await _main.CheckUpdateNow();
+                        ShowPage("about", animate: false);
+                    })),
                     Widgets.Row("开机自启", "写入 HKCU 的 Run 项", autostart),
                     Widgets.Row("配置文件", "config.json（在 %LOCALAPPDATA%\\DeskPanel 下）", Link("打开", () => OpenPath(Config.FilePath))),
                     Widgets.Row("配置目录", null, Link("浏览", () => OpenPath(Config.Dir))),
@@ -576,6 +588,29 @@ internal sealed class SettingsWindow : Window
     }
 
     private static FrameworkElement Link(string text, Action onClick) => Kit.Ghost(text, onClick);
+
+    private Widgets.Switch AutoUpdateSwitch()
+    {
+        var toggle = new Widgets.Switch(_draft.Update != null && _draft.Update.Enabled);
+        toggle.Changed += v =>
+        {
+            _draft.Update ??= new UpdateCfg();
+            _draft.Update.Enabled = v;
+        };
+        return toggle;
+    }
+
+    private Widgets.Stepper AutoUpdateHours()
+    {
+        int hours = _draft.Update?.CheckHours ?? 6;
+        var stepper = new Widgets.Stepper(hours, 1, 24, 1, " h");
+        stepper.Changed += v =>
+        {
+            _draft.Update ??= new UpdateCfg();
+            _draft.Update.CheckHours = v;
+        };
+        return stepper;
+    }
 
     private static void OpenPath(string path)
     {

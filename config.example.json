@@ -27,7 +27,10 @@
       "StopMatch": "server.js"
     }
   ],
-  "Usage": {
+  "Update": {
+    "Enabled": true,
+    "CheckHours": 6
+  },  "Usage": {
     "Enabled": false,
     "Mode": "go",
     "OpenCodeKey": "",

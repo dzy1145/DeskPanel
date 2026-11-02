@@ -304,7 +304,7 @@ internal sealed class SettingsWindow : Window
             {
                 SectionTitle("外观", "面板尺寸、主题与桌面层行为"),
                 Widgets.Card(
-                    Widgets.Row("宽度", "DIP；实际会按屏宽收敛到工作区的 30% 以内", widthStepper),
+                    Widgets.Row("宽度", "DIP；内容更宽时会自动加宽到刚好放得下，上限是工作区的 30%", widthStepper),
                     Widgets.Row("主题", "ink = 半透明深色；solid = 纯色不透明", theme),
                     Widgets.Row("显示时钟", null, clock),
                     Widgets.Row("时钟显示秒", null, seconds),

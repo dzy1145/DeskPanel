@@ -757,7 +757,7 @@ public sealed class MainWindow : Window
 		HwndSource.FromHwnd(handle)?.AddHook(WndProc);
 		_layer = new DesktopLayer(this, _cfg.DesktopLayer, _cfg.NoActivate);
 		_layer.Attach();
-		ApplyResponsiveLayout();
+		SyncWidthAndPlace();
 		SystemParameters.StaticPropertyChanged += OnSystemParamsChanged;
 		Native.DragAcceptFiles(handle, accept: true);
 		_dropTarget = new FileDropTarget(delegate(string[] paths, Point screenPx)
@@ -1038,8 +1038,7 @@ public sealed class MainWindow : Window
 			{
 				try
 				{
-					_layer?.Place();
-					ApplyResponsiveLayout();
+					SyncWidthAndPlace();
 				}
 				catch (Exception ex)
 				{
@@ -1102,8 +1101,7 @@ public sealed class MainWindow : Window
 		{
 			try
 			{
-				_layer?.Place();
-				ApplyResponsiveLayout();
+				SyncWidthAndPlace();
 			}
 			catch (Exception ex)
 			{
@@ -1669,12 +1667,9 @@ public sealed class MainWindow : Window
 			_clock.Text = DateTime.Now.ToString(_cfg.ClockSeconds > 0 ? "HH:mm:ss" : "HH:mm");
 		}
 
-		Width = Math.Clamp(_cfg.Width, 220, 600);
-		_appPanel?.Reload();
 		RebuildServiceRows();
 		ReloadStartup();
-		_layer?.Place();
-		ApplyResponsiveLayout();
+		SyncWidthAndPlace();
 
 		if (themeChanged || layerChanged || acrylicChanged || noActivateChanged)
 			_hint.Text = "已保存；主题 / 桌面层 / 亚克力 / 不抢焦点需重启面板";
@@ -1682,6 +1677,68 @@ public sealed class MainWindow : Window
 			_hint.Text = "设置已保存";
 	}
 
+	/// <summary>量一下内容的自然宽度（DIP）：窗口比它窄就会截字。</summary>
+	private double MeasureContentWidthDip()
+	{
+		try
+		{
+			double height = Height > 0 ? Math.Max(400, ActualHeight) : Math.Max(600, SystemParameters.WorkArea.Height);
+			_rootUi.Measure(new Size(double.PositiveInfinity, height));
+			return _rootUi.DesiredSize.Width;
+		}
+		catch
+		{
+			return 0;
+		}
+	}
+
+	/// <summary>
+	/// 设宽度 → 贴边 → 如果内容仍比窗口宽就加宽（最多两轮，防振荡）。
+	/// 适配的核心：窗口宽度必须 ≥ 内容自然宽度，否则右侧数字会被截掉。
+	/// </summary>
+	internal void SyncWidthAndPlace()
+	{
+		int target = Math.Clamp(_cfg.Width, 220, 600);
+		Height = Math.Max(400, SystemParameters.WorkArea.Height);
+		Width = target;
+		_layer?.Place(target);
+
+		// 窗口比内容窄 → 右侧数字/开关会被截掉，逐轮加宽（最多 3 轮防振荡）
+		try
+		{
+			UpdateLayout();
+			for (int round = 0; round < 3; round++)
+			{
+				double need = MeasureContentWidthDip();
+				double have = Width;
+				if (need <= have + 1)
+				{
+					Log.Write($"width: 配置 {target} DIP，实际 {have:0} DIP，内容 {need:0} DIP（第 {round + 1} 轮已适配）");
+					break;
+				}
+
+				int cap = (int)Math.Min(600.0, Math.Max(240.0, SystemParameters.WorkArea.Width * 0.30));
+				int grown = Math.Min(cap, (int)Math.Ceiling(need));
+				if (grown <= (int)have)
+				{
+					Log.Write($"width: 内容需要 {need:0} DIP，受工作区 30% 限制只能到 {have:0} DIP");
+					break;
+				}
+
+				Log.Write($"width: 内容需要 {need:0} DIP > 窗口 {have:0} DIP → 加宽到 {grown}");
+				Width = grown;
+				_layer?.Place(grown);
+				UpdateLayout();
+			}
+		}
+		catch (Exception ex)
+		{
+			Log.Ex(ex);
+		}
+
+		_appPanel?.Reload();
+		ApplyResponsiveLayout();
+	}
 	internal void ReloadFromConfig()
 	{
 		try
@@ -1706,9 +1763,7 @@ public sealed class MainWindow : Window
 		}
 		_cfg.Width = width;
 		_cfg.Save();
-		Width = width;
-		_layer?.Place();
-		ApplyResponsiveLayout();
+		SyncWidthAndPlace();
 		_hint.Text = "面板宽度：" + width;
 	}
 

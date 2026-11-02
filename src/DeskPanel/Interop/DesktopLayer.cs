@@ -132,7 +132,7 @@ internal sealed class DesktopLayer : IDisposable
     ///
     /// 选屏顺序：鼠标所在屏 → 主屏。宽度上限仍是工作区宽的 30%。
     /// </summary>
-    public void Place()
+    public void Place(int requestedWidthDip = 0)
     {
         // 1) 选屏：优先鼠标所在那块，取不到再退回主屏
         IntPtr mon = IntPtr.Zero;
@@ -164,7 +164,10 @@ internal sealed class DesktopLayer : IDisposable
         catch { }
 
         // 3) 宽度：配置的 DIP 宽 → 物理宽，且不超过工作区宽的 30%
-        double widthDip = Math.Clamp(_window.Width, 200, 420);
+        // 宽度以调用方给的配置值为准；没给才退回窗口当前宽度。
+        // 以前读 _window.Width 会被上一次的窗口宽度污染（越来越宽、卡在 420）。
+        double requested = requestedWidthDip > 0 ? requestedWidthDip : _window.Width;
+        double widthDip = Math.Clamp(requested, 200, 600);
         int widthPx = (int)Math.Round(widthDip * scale);
         int maxPx = (int)Math.Round(workW * 0.30);
         if (widthPx > maxPx) widthPx = Math.Max((int)Math.Round(200 * scale), maxPx);

@@ -58,6 +58,12 @@ public sealed class UsageCfg
 
     /// <summary>DeepSeek 的 API key（也可用环境变量 DEEPSEEK_API_KEY）。</summary>
     public string DeepSeekKey { get; set; } = "";
+
+    /// <summary>
+    /// 百度千帆 Token Plan 的余量请求：浏览器 DevTools 里对该请求「Copy as cURL」的原文（含 Cookie）。
+    /// 只存在本机 config.json，不会上传。
+    /// </summary>
+    public string QianfanCurl { get; set; } = "";
 }
 
 /// <summary>自动检测更新。</summary>

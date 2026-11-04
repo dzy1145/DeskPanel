@@ -514,9 +514,15 @@ internal sealed class SettingsWindow : Window
     {
         var enabled = new Widgets.Switch(_draft.Usage.Enabled);
         var mode = new Widgets.Segmented(_draft.Usage.Mode,
-            ("go", "OpenCode Go"), ("deepseek", "DeepSeek 余额"));
+            ("go", "OpenCode Go"), ("deepseek", "DeepSeek"), ("qianfan", "千帆积分"));
         var (openCodeHost, openCodeKey) = Kit.Secret(_draft.Usage.OpenCodeKey);
         var (deepSeekHost, deepSeekKey) = Kit.Secret(_draft.Usage.DeepSeekKey);
+
+        var qfBox = Kit.Input(_draft.Usage.QianfanCurl, multiline: true);
+        qfBox.Height = 72;
+        qfBox.TextChanged += (_, _) => _draft.Usage.QianfanCurl = qfBox.Text.Trim();
+        var qfHost = Kit.Field(qfBox);
+        qfHost.MinWidth = 300;
 
         enabled.Changed += v => _draft.Usage.Enabled = v;
         mode.Changed += v => _draft.Usage.Mode = v;
@@ -530,11 +536,13 @@ internal sealed class SettingsWindow : Window
                 SectionTitle("额度", "可选；关闭时整块隐藏且不联网"),
                 Widgets.Card(
                     Widgets.Row("显示额度区", "打开后每分钟拉一次数据", enabled),
-                    Widgets.Row("默认视图", "点面板上的「额度」可以在两种视图之间切换", mode),
-                    Widgets.Row("OpenCode Go", "key 留空则读环境变量 OPENCODE_GO_API_KEY", openCodeHost),
-                    Widgets.Row("DeepSeek", "key 留空则读环境变量 DEEPSEEK_API_KEY", deepSeekHost, divider: false)),
+                    Widgets.Row("默认视图", "点面板上的「额度」可在三种视图之间循环", mode),
+                    Widgets.Row("OpenCode Go", "留空读 OPENCODE_GO_API_KEY", openCodeHost),
+                    Widgets.Row("DeepSeek", "留空读 DEEPSEEK_API_KEY", deepSeekHost),
+                    Widgets.Row("千帆余量", "控制台对该请求 Copy as cURL 整段贴进来", qfHost, divider: false)),
 
-                Text("key 只保存在本机 config.json，不会上传；面板只直连官方接口。", Theme.Faint, 10.5),
+                Text("千帆的余量走控制台接口，用 cURL 里的 Cookie 鉴权（官方 API Key 只能调对话，查不到余量）。\n" +
+                     "cURL 含登录 Cookie，只写在本机 config.json，不会上传；Cookie 过期后重新复制一次即可。", Theme.Faint, 10.5),
             },
         };
     }

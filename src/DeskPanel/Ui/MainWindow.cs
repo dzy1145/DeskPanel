@@ -107,6 +107,16 @@ public sealed class MainWindow : Window
 
 	private FrameworkElement _dsView;
 
+	// 百度千帆 Token Plan（积分制）
+	private FrameworkElement _qfView;
+	private TextBlock _qfPercent;
+	private TextBlock _qfLine;
+	private TextBlock _qfReset;
+	private Border _qfFill;
+	private double _qfTrackWidth;
+	private bool _qfBusy;
+	private QianfanCredits.Snapshot _lastQianfan;
+
 	private TextBlock _dsTotal;
 
 	private TextBlock _dsSub;
@@ -454,6 +464,8 @@ public sealed class MainWindow : Window
 		_usageBody.Children.Add(_goView);
 		_dsView = BuildDeepSeekView();
 		_usageBody.Children.Add(_dsView);
+		_qfView = BuildQianfanView();
+		_usageBody.Children.Add(_qfView);
 		stackPanel5.Children.Add(_usageBody);
 		Grid.SetRow(stackPanel5, 10);
 		grid2.Children.Add(stackPanel5);
@@ -470,10 +482,16 @@ public sealed class MainWindow : Window
 		{
 			ApplyBalance(snapshot2, stale: true);
 		}
+		QianfanCredits.Snapshot snapshot3 = QianfanCredits.LoadCache();
+		if (snapshot3 != null)
+		{
+			ApplyQianfan(snapshot3, stale: true);
+		}
 		_mode = (string.IsNullOrWhiteSpace(_cfg.Usage.Mode) ? "go" : _cfg.Usage.Mode.Trim().ToLowerInvariant());
 		ShowUsageBody(animated: false);
 		RefreshUsage();
 		RefreshBalance();
+		RefreshQianfan();
 		_usageTimer = new DispatcherTimer
 		{
 			Interval = TimeSpan.FromMinutes(1.0)
@@ -482,6 +500,7 @@ public sealed class MainWindow : Window
 		{
 			RefreshUsage();
 			RefreshBalance();
+			RefreshQianfan();
 		};
 		if (_cfg.Usage.Enabled)
 		{
@@ -529,28 +548,200 @@ public sealed class MainWindow : Window
 		return obj;
 	}
 
+	/// <summary>百度千帆 Token Plan：套餐余量进度条 + 百分比 + 剩余/总量积分（照官方控制台那一块）。</summary>
+	private FrameworkElement BuildQianfanView()
+	{
+		var panel = new StackPanel
+		{
+			VerticalAlignment = VerticalAlignment.Center,
+			Cursor = Cursors.Hand,
+			ToolTip = "百度千帆 Token Plan 余量，点一下重新拉取",
+			Visibility = Visibility.Collapsed,
+		};
+
+		_qfReset = new TextBlock
+		{
+			Text = "套餐余量",
+			FontFamily = Theme.Ui,
+			FontSize = 9.5,
+			Foreground = Theme.Faint,
+			Margin = new Thickness(0, 0, 0, 2),
+		};
+		panel.Children.Add(_qfReset);
+
+		var row = new Grid();
+		row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+		row.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+
+		_qfPercent = new TextBlock
+		{
+			Text = "--%",
+			FontFamily = Theme.Num,
+			FontSize = 26,
+			FontWeight = FontWeights.SemiBold,
+			Foreground = Theme.Text,
+		};
+		row.Children.Add(_qfPercent);
+
+		_qfLine = new TextBlock
+		{
+			Text = "剩余 -- / 总量 -- 积分",
+			FontFamily = Theme.Ui,
+			FontSize = 9.5,
+			Foreground = Theme.Faint,
+			HorizontalAlignment = HorizontalAlignment.Right,
+			VerticalAlignment = VerticalAlignment.Bottom,
+			Margin = new Thickness(0, 0, 0, 4),
+		};
+		Grid.SetColumn(_qfLine, 1);
+		row.Children.Add(_qfLine);
+		panel.Children.Add(row);
+
+		var track = new Border
+		{
+			Height = 6,
+			CornerRadius = new CornerRadius(3),
+			Background = Theme.Frozen(0x24, 0xFF, 0xFF, 0xFF),
+			Margin = new Thickness(0, 8, 0, 0),
+			ClipToBounds = true,
+		};
+		_qfFill = new Border
+		{
+			Height = 6,
+			CornerRadius = new CornerRadius(3),
+			Background = Theme.Accent,
+			HorizontalAlignment = HorizontalAlignment.Left,
+			Width = 0,
+		};
+		track.Child = _qfFill;
+		track.SizeChanged += delegate
+		{
+			_qfTrackWidth = track.ActualWidth;
+			ApplyQianfanBar(_lastQianfan);
+		};
+		panel.Children.Add(track);
+
+		panel.MouseLeftButtonUp += delegate(object _, MouseButtonEventArgs e)
+		{
+			e.Handled = true;
+			RefreshQianfan();
+		};
+		return panel;
+	}
+
+	private void ApplyQianfan(QianfanCredits.Snapshot snap, bool stale)
+	{
+		if (snap == null) return;
+		_lastQianfan = snap;
+
+		_qfPercent.Text = snap.Ok ? snap.Percent.ToString("0.##") + "%" : "--%";
+		_qfLine.Text = snap.Ok
+			? $"剩余 {snap.Remaining:#,0.##} / 总量 {snap.Total:#,0.##} 积分"
+			: "未取到余量";
+		_qfReset.Text = snap.Ok
+			? (string.IsNullOrWhiteSpace(snap.ResetText) ? "套餐余量" : "套餐余量 · " + snap.ResetText + " 重置")
+			: "套餐余量";
+		_qfPercent.Foreground = snap.Ok ? Theme.Text : Theme.Faint;
+		ApplyQianfanBar(snap);
+
+		if (_mode == "qianfan")
+		{
+			_usageHint.Text = snap.FetchedAt.ToString("HH:mm") + (stale ? " · 缓存" : "");
+			_usageHint.ToolTip = snap.Ok ? null : snap.Error;
+		}
+	}
+
+	private void ApplyQianfanBar(QianfanCredits.Snapshot snap)
+	{
+		if (_qfFill == null || _qfTrackWidth <= 0) return;
+		double pct = snap != null && snap.Ok ? Math.Clamp(snap.Percent, 0, 100) : 0;
+		_qfFill.Width = Math.Max(0, _qfTrackWidth * pct / 100.0);
+	}
+
+	private void RefreshQianfan()
+	{
+		if (!_cfg.Usage.Enabled || _qfBusy) return;
+		if (string.IsNullOrWhiteSpace(_cfg.Usage.QianfanCurl)) return;
+
+		_qfBusy = true;
+		string curl = _cfg.Usage.QianfanCurl;
+		Task.Run(() => QianfanCredits.FetchAsync(curl)).ContinueWith(delegate(Task<QianfanCredits.Snapshot> t)
+		{
+			if (t.Status != TaskStatus.RanToCompletion) return;
+			QianfanCredits.Snapshot snap = t.Result;
+			base.Dispatcher.BeginInvoke((Action)delegate
+			{
+				_qfBusy = false;
+				if (snap.Ok)
+				{
+					ApplyQianfan(snap, stale: false);
+					QianfanCredits.SaveCache(snap);
+					Log.Write($"qianfan: {snap.Percent:0.##}% 剩余 {snap.Remaining:0.##}/{snap.Total:0.##}");
+				}
+				else
+				{
+					QianfanCredits.Snapshot cached = _lastQianfan ?? QianfanCredits.LoadCache();
+					if (cached != null) ApplyQianfan(cached, stale: true);
+					if (_mode == "qianfan")
+					{
+						_usageHint.Text = "取余量失败";
+						_usageHint.ToolTip = snap.Error;
+					}
+					Log.Write("qianfan: " + snap.Error);
+				}
+			});
+		});
+	}
 	private void ToggleUsageMode()
 	{
-		_mode = ((_mode == "deepseek") ? "go" : "deepseek");
+		// Go 三环 → DeepSeek 余额 → 百度千帆积分 → 回到 Go
+		_mode = _mode switch
+		{
+			"go" => "deepseek",
+			"deepseek" => "qianfan",
+			_ => "go",
+		};
 		_cfg.Usage.Mode = _mode;
 		_cfg.Save();
 		ShowUsageBody(animated: true);
-		if (_mode == "deepseek")
+		switch (_mode)
 		{
-			RefreshBalance();
-		}
-		else
-		{
-			RefreshUsage();
+			case "deepseek":
+				RefreshBalance();
+				break;
+			case "qianfan":
+				RefreshQianfan();
+				break;
+			default:
+				RefreshUsage();
+				break;
 		}
 	}
 
 	private void ShowUsageBody(bool animated)
 	{
-		bool flag = _mode == "deepseek";
-		FrameworkElement frameworkElement = (flag ? _dsView : _goView);
-		FrameworkElement hide = (flag ? _goView : _dsView);
-		_usageTitleText.Text = (flag ? "额度 · DeepSeek ⇄" : "额度 · Go ⇄");
+		FrameworkElement frameworkElement = _mode switch
+		{
+			"deepseek" => _dsView,
+			"qianfan" => _qfView,
+			_ => _goView,
+		};
+		_usageTitleText.Text = _mode switch
+		{
+			"deepseek" => "额度 · DeepSeek ⇄",
+			"qianfan" => "额度 · 千帆 ⇄",
+			_ => "额度 · Go ⇄",
+		};
+		foreach (FrameworkElement other in new FrameworkElement[] { _goView, _dsView, _qfView })
+		{
+			if (other != null && other != frameworkElement)
+			{
+				other.Visibility = Visibility.Collapsed;
+				other.IsHitTestVisible = false;
+			}
+		}
+		FrameworkElement hide = new FrameworkElement[] { _goView, _dsView, _qfView }
+			.FirstOrDefault(x => x != null && x != frameworkElement);
 		frameworkElement.Visibility = Visibility.Visible;
 		frameworkElement.IsHitTestVisible = true;
 		if (!animated)

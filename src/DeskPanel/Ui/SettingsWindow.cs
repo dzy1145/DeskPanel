@@ -1,5 +1,8 @@
 using System.Diagnostics;
 using System.IO;
+using System.Threading;
+using System.Threading.Tasks;
+using DeskPanel.Metrics;
 using System.Text.Json;
 using System.Windows;
 using System.Windows.Controls;
@@ -518,11 +521,58 @@ internal sealed class SettingsWindow : Window
         var (openCodeHost, openCodeKey) = Kit.Secret(_draft.Usage.OpenCodeKey);
         var (deepSeekHost, deepSeekKey) = Kit.Secret(_draft.Usage.DeepSeekKey);
 
-        var qfBox = Kit.Input(_draft.Usage.QianfanCurl, multiline: true);
-        qfBox.Height = 72;
-        qfBox.TextChanged += (_, _) => _draft.Usage.QianfanCurl = qfBox.Text.Trim();
-        var qfHost = Kit.Field(qfBox);
-        qfHost.MinWidth = 300;
+        // 千帆余量：点按钮 → 弹浏览器 → 登录后自动抓，不需要用户复制粘贴
+        var qfStatus = new TextBlock
+        {
+            Text = string.IsNullOrWhiteSpace(_draft.Usage.QianfanCurl) ? "未配置" : "已配置（捕获于本机）",
+            FontFamily = Theme.Ui,
+            FontSize = 10.5,
+            Foreground = Theme.Faint,
+            VerticalAlignment = VerticalAlignment.Center,
+            TextWrapping = TextWrapping.Wrap,
+            MaxWidth = 300,
+        };
+
+        Border qfButton = null;
+        qfButton = Kit.Button("登录并抓取", false, async () =>
+        {
+            qfButton.IsEnabled = false;
+            qfStatus.Text = "正在打开浏览器…";
+            try
+            {
+                using var cts = new CancellationTokenSource(TimeSpan.FromMinutes(11));
+                QianfanCapture.Result result = await Task.Run(() => QianfanCapture.CaptureAsync(
+                    "https://console.bce.baidu.com/qianfan/",
+                    600,
+                    message => Dispatcher.BeginInvoke(new Action(() => qfStatus.Text = message)),
+                    cts.Token));
+
+                if (result.Ok)
+                {
+                    _draft.Usage.QianfanCurl = result.Curl;
+                    _draft.Usage.Mode = "qianfan";
+                    qfStatus.Text = "已抓到，点「保存」生效";
+                }
+                else
+                {
+                    qfStatus.Text = "没抓到：" + result.Error;
+                }
+            }
+            catch (Exception ex)
+            {
+                Log.Ex(ex);
+                qfStatus.Text = "抓取失败：" + ex.Message;
+            }
+            finally
+            {
+                qfButton.IsEnabled = true;
+            }
+        });
+
+        var qfHost = new StackPanel { Orientation = Orientation.Horizontal, VerticalAlignment = VerticalAlignment.Center };
+        qfHost.Children.Add(qfButton);
+        qfHost.Children.Add(qfStatus);
+        qfStatus.Margin = new Thickness(10, 0, 0, 0);
 
         enabled.Changed += v => _draft.Usage.Enabled = v;
         mode.Changed += v => _draft.Usage.Mode = v;
@@ -539,10 +589,11 @@ internal sealed class SettingsWindow : Window
                     Widgets.Row("默认视图", "点面板上的「额度」可在三种视图之间循环", mode),
                     Widgets.Row("OpenCode Go", "留空读 OPENCODE_GO_API_KEY", openCodeHost),
                     Widgets.Row("DeepSeek", "留空读 DEEPSEEK_API_KEY", deepSeekHost),
-                    Widgets.Row("千帆余量", "控制台对该请求 Copy as cURL 整段贴进来", qfHost, divider: false)),
+                    Widgets.Row("千帆余量", "点按钮，浏览器里登录一次，自动抓取", qfHost, divider: false)),
 
-                Text("千帆的余量走控制台接口，用 cURL 里的 Cookie 鉴权（官方 API Key 只能调对话，查不到余量）。\n" +
-                     "cURL 含登录 Cookie，只写在本机 config.json，不会上传；Cookie 过期后重新复制一次即可。", Theme.Faint, 10.5),
+                Text("千帆余量走控制台接口（官方 API Key 只能调对话，查不到余量），所以点「登录并抓取」时\n" +
+                     "会打开一个浏览器窗口：你登录一次，脚本自动把那条请求记下来。登录状态会被记住，\n" +
+                     "以后只在 Cookie 过期时再点一次。抓到的内容只存在本机 config.json。", Theme.Faint, 10.5),
             },
         };
     }

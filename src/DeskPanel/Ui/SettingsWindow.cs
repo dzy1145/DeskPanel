@@ -542,7 +542,6 @@ internal sealed class SettingsWindow : Window
             {
                 using var cts = new CancellationTokenSource(TimeSpan.FromMinutes(11));
                 QianfanCapture.Result result = await Task.Run(() => QianfanCapture.CaptureAsync(
-                    "https://console.bce.baidu.com/qianfan/",
                     600,
                     message => Dispatcher.BeginInvoke(new Action(() => qfStatus.Text = message)),
                     cts.Token));
@@ -551,7 +550,7 @@ internal sealed class SettingsWindow : Window
                 {
                     _draft.Usage.QianfanCurl = result.Curl;
                     _draft.Usage.Mode = "qianfan";
-                    qfStatus.Text = "已抓到，点「保存」生效";
+                    qfStatus.Text = "已抓到（" + result.Summary + "），点「保存」生效";
                 }
                 else
                 {

@@ -1,3 +1,4 @@
+using System.IO;
 using System.Threading;
 using System.Windows;
 using System.Windows.Threading;
@@ -13,6 +14,35 @@ internal static class Program
     [STAThread]
     private static void Main(string[] args)
     {
+        // 诊断用：--qianfan-parse <json> 只跑解析器，不开窗口
+        for (int i = 0; i < args.Length; i++)
+        {
+            if (args[i] == "--qianfan-parse" && i + 1 < args.Length)
+            {
+                try
+                {
+                    string json = File.ReadAllText(args[i + 1]);
+                    var snap = Metrics.QianfanCredits.Parse(json);
+                    Console.WriteLine($"ok={snap.Ok} percent={snap.Percent} remaining={snap.Remaining} total={snap.Total} reset={snap.ResetText} err={snap.Error}");
+                }
+                catch (Exception ex)
+                {
+                    Console.WriteLine("parse failed: " + ex.Message);
+                }
+                return;
+            }
+        }
+
+        // 诊断用：--qianfan-capture 只跑抓取，把 cURL 打到控制台
+        if (args.Contains("--qianfan-capture"))
+        {
+            var result = Metrics.QianfanCapture.CaptureAsync(
+                180, m => Console.WriteLine("[capture] " + m), CancellationToken.None).GetAwaiter().GetResult();
+            Console.WriteLine($"ok={result.Ok} url={result.Url} err={result.Error}");
+            if (result.Ok) Console.WriteLine("CURL=" + result.Curl);
+            return;
+        }
+
         bool wantsSettings = false;
         foreach (string arg in args)
         {

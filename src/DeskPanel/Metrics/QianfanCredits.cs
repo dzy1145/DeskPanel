@@ -133,7 +133,7 @@ public static class QianfanCredits
         try
         {
             using var doc = JsonDocument.Parse(json);
-            double? remain = null, total = null, percent = null;
+            double? remain = null, total = null, percent = null, used = null;
             string reset = "";
 
             Walk(doc.RootElement, (name, element) =>
@@ -149,24 +149,31 @@ public static class QianfanCredits
 
                     if (isNum)
                     {
-                        if (percent == null && (n.Contains("percent") || n.Contains("ratio") || n.Contains("rate")))
+                        // 千帆真实字段：totalCredits / usedCredits（字符串数字），余量要自己减
+                        if (total == null && n.Replace("_", "").Contains("totalcredit")) total = v;
+                        else if (used == null && n.Replace("_", "").Contains("usedcredit")) used = v;
+                        else if (percent == null && (n.Contains("percent") || n.Contains("ratio") || n.Contains("rate")))
                             percent = v;
                         else if (remain == null && (n.Contains("remain") || n.Contains("left") || n.Contains("surplus") || n.Contains("available")))
                             remain = v;
-                        else if (total == null && (n.Contains("total") || n.Contains("quota") || n.Contains("amount") || n.Contains("cap") || n.Contains("limit")))
+                        else if (total == null && (n.Contains("total") || n.Contains("quota") || n.Contains("amount") || n.Contains("cap") || n.Contains("limit")) && !n.Contains("count") && !n.Contains("token"))
                             total = v;
                     }
-                    else if (reset.Length == 0 && (n.Contains("reset") || n.Contains("expire") || n.Contains("next")))
+                    else if (reset.Length == 0 && (n.Contains("reset") || n.Contains("expire") || n.Contains("next") || n.Contains("due") || n.Contains("renew")))
                     {
                         reset = element.GetString() ?? "";
                     }
                 }
                 else if (element.ValueKind == JsonValueKind.String && reset.Length == 0 &&
-                         (n.Contains("reset") || n.Contains("expire") || n.Contains("next")))
+                         (n.Contains("reset") || n.Contains("expire") || n.Contains("next") || n.Contains("due") || n.Contains("renew")))
                 {
                     reset = element.GetString() ?? "";
                 }
             });
+
+            // 有 total + used 就先算剩余
+            if (!remain.HasValue && total.HasValue && used.HasValue)
+                remain = Math.Max(0, total.Value - used.Value);
 
             // 百分比可能是 0–1 的小数
             if (percent.HasValue && percent.Value > 0 && percent.Value <= 1) percent *= 100;
@@ -175,6 +182,11 @@ public static class QianfanCredits
 
             if (!remain.HasValue && !total.HasValue && !percent.HasValue)
                 return Fail("返回里找不到余量字段");
+
+            // 把 ISO 时间（2026-12-04T13:26:59+08:00）格式化成 2026-12-04 13:26
+            if (reset.Length > 10 && DateTime.TryParse(reset, CultureInfo.InvariantCulture,
+                    DateTimeStyles.AdjustToUniversal | DateTimeStyles.AssumeLocal, out DateTime resetAt))
+                reset = resetAt.ToLocalTime().ToString("yyyy-MM-dd HH:mm");
 
             double pct = percent ?? 0;
             if (remain.HasValue && total.HasValue && total.Value > 0 && !percent.HasValue)

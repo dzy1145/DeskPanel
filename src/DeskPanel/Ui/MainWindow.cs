@@ -628,17 +628,17 @@ public sealed class MainWindow : Window
 		// 余量条下面那条更细的：套餐剩余时间（越靠近重置越短），颜色和 OpenCode 三环一致
 		_qfTimeTrack = new Border
 		{
-			Height = 3,
-			CornerRadius = new CornerRadius(1.5),
-			Background = Theme.Frozen(0x1C, 0xFF, 0xFF, 0xFF),
+			Height = 2,
+			CornerRadius = new CornerRadius(1),
+			Background = Theme.Hair,
 			Margin = new Thickness(0, 5, 0, 0),
 			ClipToBounds = true,
 		};
 		_qfTimeFill = new Border
 		{
-			Height = 3,
-			CornerRadius = new CornerRadius(1.5),
-			Background = Theme.Accent,
+			Height = 2,
+			CornerRadius = new CornerRadius(1),
+			Background = Theme.Purple,   // 和 OpenCode Go 外环「刷新进度」同一个紫
 			HorizontalAlignment = HorizontalAlignment.Left,
 			Width = 0,
 		};

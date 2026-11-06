@@ -23,7 +23,7 @@ internal static class Program
                 {
                     string json = File.ReadAllText(args[i + 1]);
                     var snap = Metrics.QianfanCredits.Parse(json);
-                    Console.WriteLine($"ok={snap.Ok} percent={snap.Percent} remaining={snap.Remaining} total={snap.Total} reset={snap.ResetText} err={snap.Error}");
+                    Console.WriteLine($"ok={snap.Ok} percent={snap.Percent} remaining={snap.Remaining} total={snap.Total} reset={snap.ResetText} periodStart={snap.PeriodStart} periodEnd={snap.PeriodEnd} err={snap.Error}");
                 }
                 catch (Exception ex)
                 {

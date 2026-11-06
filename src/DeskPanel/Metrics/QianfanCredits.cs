@@ -31,6 +31,12 @@ public static class QianfanCredits
         public double Remaining { get; init; }
         public double Total { get; init; }
         public string ResetText { get; init; } = "";
+
+        /// <summary>套餐生效时间（算剩余时间条用），取不到就是 null。</summary>
+        public DateTime? PeriodStart { get; init; }
+
+        /// <summary>套餐到期/重置时间。</summary>
+        public DateTime? PeriodEnd { get; init; }
         public string Error { get; init; } = "";
         public DateTime FetchedAt { get; init; } = DateTime.Now;
     }
@@ -135,6 +141,7 @@ public static class QianfanCredits
             using var doc = JsonDocument.Parse(json);
             double? remain = null, total = null, percent = null, used = null;
             string reset = "";
+            DateTime? effectiveAt = null, expiresAt = null;
 
             Walk(doc.RootElement, (name, element) =>
             {
@@ -159,9 +166,18 @@ public static class QianfanCredits
                         else if (total == null && (n.Contains("total") || n.Contains("quota") || n.Contains("amount") || n.Contains("cap") || n.Contains("limit")) && !n.Contains("count") && !n.Contains("token"))
                             total = v;
                     }
-                    else if (reset.Length == 0 && (n.Contains("reset") || n.Contains("expire") || n.Contains("next") || n.Contains("due") || n.Contains("renew")))
+                    else if (element.ValueKind == JsonValueKind.String &&
+                             (n.Contains("effective") || n.Contains("expire")) &&
+                             DateTime.TryParse(element.GetString(), CultureInfo.InvariantCulture,
+                                 DateTimeStyles.AdjustToUniversal | DateTimeStyles.AssumeUniversal, out DateTime parsedTime))
                     {
-                        reset = element.GetString() ?? "";
+                        if (n.Contains("effective") && effectiveAt == null) effectiveAt = parsedTime.ToLocalTime();
+                        else if (n.Contains("expire") && expiresAt == null) expiresAt = parsedTime.ToLocalTime();
+                    }
+                    else if (reset.Length == 0 && (n.Contains("reset") || n.Contains("expire") || n.Contains("next") || n.Contains("due") || n.Contains("renew")) &&
+                             element.GetString() is string rs && System.Text.RegularExpressions.Regex.IsMatch(rs, @"\d{4}-\d{2}-\d{2}|\d{1,2}:\d{2}"))
+                    {
+                        reset = rs;
                     }
                 }
                 else if (element.ValueKind == JsonValueKind.String && reset.Length == 0 &&
@@ -183,6 +199,9 @@ public static class QianfanCredits
             if (!remain.HasValue && !total.HasValue && !percent.HasValue)
                 return Fail("返回里找不到余量字段");
 
+            // 有到期时间就以它为准
+            if (expiresAt.HasValue) reset = expiresAt.Value.ToString("yyyy-MM-dd HH:mm");
+
             // 把 ISO 时间（2026-12-04T13:26:59+08:00）格式化成 2026-12-04 13:26
             if (reset.Length > 10 && DateTime.TryParse(reset, CultureInfo.InvariantCulture,
                     DateTimeStyles.AdjustToUniversal | DateTimeStyles.AssumeLocal, out DateTime resetAt))
@@ -199,6 +218,8 @@ public static class QianfanCredits
                 Remaining = remain ?? 0,
                 Total = total ?? 0,
                 ResetText = reset,
+                PeriodStart = effectiveAt,
+                PeriodEnd = expiresAt ?? (DateTime.TryParse(reset, out DateTime rt) ? rt : null),
             };
         }
         catch (Exception ex)
@@ -240,6 +261,8 @@ public static class QianfanCredits
                 remaining = snap.Remaining,
                 total = snap.Total,
                 resetText = snap.ResetText,
+                periodStart = snap.PeriodStart,
+                periodEnd = snap.PeriodEnd,
                 fetchedAt = snap.FetchedAt,
             };
             File.WriteAllText(CachePath, JsonSerializer.Serialize(payload));
@@ -261,6 +284,8 @@ public static class QianfanCredits
                 Remaining = root.TryGetProperty("remaining", out var r) ? r.GetDouble() : 0,
                 Total = root.TryGetProperty("total", out var tt) ? tt.GetDouble() : 0,
                 ResetText = root.TryGetProperty("resetText", out var rs) ? rs.GetString() ?? "" : "",
+                PeriodStart = root.TryGetProperty("periodStart", out var ps) && ps.ValueKind == JsonValueKind.String && ps.TryGetDateTime(out var psd) ? psd : null,
+                PeriodEnd = root.TryGetProperty("periodEnd", out var pe) && pe.ValueKind == JsonValueKind.String && pe.TryGetDateTime(out var ped) ? ped : null,
                 FetchedAt = root.TryGetProperty("fetchedAt", out var fa) && fa.TryGetDateTime(out var dt) ? dt : DateTime.Now,
             };
         }

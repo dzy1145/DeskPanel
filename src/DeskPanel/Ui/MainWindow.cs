@@ -114,6 +114,8 @@ public sealed class MainWindow : Window
 	private TextBlock _qfLine;
 	private TextBlock _qfReset;
 	private Border _qfFill;
+	private Border _qfTimeFill;
+	private Border _qfTimeTrack;
 	private double _qfTrackWidth;
 	private bool _qfBusy;
 	private QianfanCredits.Snapshot _lastQianfan;
@@ -502,6 +504,7 @@ public sealed class MainWindow : Window
 			RefreshUsage();
 			RefreshBalance();
 			RefreshQianfan();
+			ApplyQianfanBar(_lastQianfan);   // 时间条每分钟自己走，不用等网络
 		};
 		if (_cfg.Usage.Enabled)
 		{
@@ -622,6 +625,27 @@ public sealed class MainWindow : Window
 		};
 		panel.Children.Add(track);
 
+		// 余量条下面那条更细的：套餐剩余时间（越靠近重置越短），颜色和 OpenCode 三环一致
+		_qfTimeTrack = new Border
+		{
+			Height = 3,
+			CornerRadius = new CornerRadius(1.5),
+			Background = Theme.Frozen(0x1C, 0xFF, 0xFF, 0xFF),
+			Margin = new Thickness(0, 5, 0, 0),
+			ClipToBounds = true,
+		};
+		_qfTimeFill = new Border
+		{
+			Height = 3,
+			CornerRadius = new CornerRadius(1.5),
+			Background = Theme.Accent,
+			HorizontalAlignment = HorizontalAlignment.Left,
+			Width = 0,
+		};
+		_qfTimeTrack.Child = _qfTimeFill;
+		_qfTimeTrack.SizeChanged += delegate { ApplyQianfanBar(_lastQianfan); };
+		panel.Children.Add(_qfTimeTrack);
+
 		panel.MouseLeftButtonUp += delegate(object _, MouseButtonEventArgs e)
 		{
 			e.Handled = true;
@@ -654,9 +678,31 @@ public sealed class MainWindow : Window
 
 	private void ApplyQianfanBar(QianfanCredits.Snapshot snap)
 	{
-		if (_qfFill == null || _qfTrackWidth <= 0) return;
-		double pct = snap != null && snap.Ok ? Math.Clamp(snap.Percent, 0, 100) : 0;
-		_qfFill.Width = Math.Max(0, _qfTrackWidth * pct / 100.0);
+		if (_qfFill != null && _qfTrackWidth > 0)
+		{
+			double pct = snap != null && snap.Ok ? Math.Clamp(snap.Percent, 0, 100) : 0;
+			_qfFill.Width = Math.Max(0, _qfTrackWidth * pct / 100.0);
+		}
+
+		// 下面那条：套餐剩余时间，越接近重置越短（跟余量条同一套宽度，视觉上就是两条在赛跑）
+		if (_qfTimeTrack == null || _qfTimeFill == null) return;
+
+		double remainFraction = 0;
+		bool known = false;
+		if (snap?.PeriodStart is DateTime start && snap.PeriodEnd is DateTime end && end > start)
+		{
+			known = true;
+			double totalSeconds = (end - start).TotalSeconds;
+			double leftSeconds = (end - DateTime.Now).TotalSeconds;
+			remainFraction = totalSeconds <= 0 ? 0 : Math.Clamp(leftSeconds / totalSeconds, 0, 1);
+		}
+
+		_qfTimeTrack.Visibility = known ? Visibility.Visible : Visibility.Collapsed;
+		if (known)
+		{
+			double width = _qfTimeTrack.ActualWidth;
+			_qfTimeFill.Width = Math.Max(1.5, width * remainFraction);
+		}
 	}
 
 	private void RefreshQianfan()

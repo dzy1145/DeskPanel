@@ -57,10 +57,25 @@ internal sealed class DesktopLayer : IDisposable
     /// </summary>
     private void Pin()
     {
-        if (!_pinToDesktop || _hwnd == IntPtr.Zero) return;
+        if (_hwnd == IntPtr.Zero) return;
 
         var rect = new Native.RECT();
         if (!Native.GetWindowRect(_hwnd, ref rect)) return;
+
+        // 每 500ms 更新一次「是不是被全屏窗口完全盖住了」。
+        // WPF 不知道自己被遮挡，分层窗口会继续每秒重绘整窗 —— 看全屏视频时这部分全是白烧。
+        bool covered = IsFullyCovered(rect);
+        if (covered != _covered)
+        {
+            _covered = covered;
+            if (_coverLogBudget > 0)
+            {
+                _coverLogBudget--;
+                Log($"covered={covered}");
+            }
+        }
+
+        if (!_pinToDesktop) return;
 
         var center = new Native.POINT
         {
@@ -107,6 +122,39 @@ internal sealed class DesktopLayer : IDisposable
 
     private int _logBudget = 12;
     private IntPtr _lastAfter = (IntPtr)(-1);
+    private volatile bool _covered;
+    private int _coverLogBudget = 10;
+
+    /// <summary>
+    /// 面板是否被别的窗口完全盖住（比如全屏看视频）。
+    /// 3 列 × 6 行采样，只要有一个点还露在自己身上就算可见。
+    /// </summary>
+    public bool Covered => _covered;
+
+    private bool IsFullyCovered(Native.RECT rect)
+    {
+        int w = rect.Right - rect.Left;
+        int h = rect.Bottom - rect.Top;
+        if (w < 60 || h < 60) return false;
+
+        const int inset = 12;
+        int left = rect.Left + inset, right = rect.Right - inset;
+        int top = rect.Top + inset, bottom = rect.Bottom - inset;
+
+        for (int row = 0; row < 6; row++)
+        {
+            int y = top + (bottom - top) * row / 5;
+            for (int col = 0; col < 3; col++)
+            {
+                int x = left + (right - left) * col / 2;
+                IntPtr hit = Native.WindowFromPoint(new Native.POINT { X = x, Y = y });
+                if (hit == _hwnd) return false;
+                // 看到桌面宿主说明面板不在正确的层级（Pin 会去纠正），别把它当成「被应用盖住」冻住
+                if (hit == IntPtr.Zero || IsDesktopHost(hit)) return false;
+            }
+        }
+        return true;
+    }
 
     /// <summary>桌面宿主窗口（Progman / WorkerW / SHELLDLL_DefView 及其子窗口）。</summary>
     private static bool IsDesktopHost(IntPtr hwnd)

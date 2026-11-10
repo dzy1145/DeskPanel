@@ -38,6 +38,10 @@ public sealed class MainWindow : Window
 
 	private ScrollViewer _startupScroll;
 
+	/// <summary>上次扫描结果的签名；没变化就不重建列表。</summary>
+	private string _startupSig = "";
+	private bool _startupBusy;
+
 
 
 	private FrameworkElement _rootUi;
@@ -1036,6 +1040,10 @@ public sealed class MainWindow : Window
 			e2.Handled = true;
 		};
 		_metrics = new MetricsEngine(_cfg.RefreshMs, _cfg.Drives);
+		_metrics.Suspended = delegate
+		{
+			return _layer != null && _layer.Covered;
+		};
 		_metrics.Sampled += OnSample;
 		_clockTimer = new DispatcherTimer
 		{
@@ -1043,6 +1051,7 @@ public sealed class MainWindow : Window
 		};
 		_clockTimer.Tick += delegate
 		{
+			if (SkipWhileCovered()) return;
 			_clock.Text = DateTime.Now.ToString(_cfg.ClockSeconds > 0 ? "HH:mm:ss" : "HH:mm");
 		_clock.Visibility = (_cfg.ShowClock ? Visibility.Visible : Visibility.Collapsed);
 		};
@@ -1051,7 +1060,8 @@ public sealed class MainWindow : Window
 		CheckWriteAccess();
 		_startupTimer = new DispatcherTimer
 		{
-			Interval = TimeSpan.FromSeconds(20.0)
+			// 扫描已挪到后台线程，间隔可以放宽：启动项不会自己变，真正变了也只在下次扫描时重建
+			Interval = TimeSpan.FromSeconds(60.0)
 		};
 		_startupTimer.Tick += delegate
 		{
@@ -1361,10 +1371,27 @@ public sealed class MainWindow : Window
 		Application.Current?.Shutdown();
 	}
 
+	private DateTime _lastCoveredUi = DateTime.MinValue;
+
+	/// <summary>
+	/// 面板被全屏窗口完全盖住时跳过这批 UI 刷新（没人看得见，重绘全是白烧）。
+	/// 但仍保留 5 秒一次的兜底，万一遮挡判定出岔子，面板也不会看起来像死掉。
+	/// </summary>
+	private bool SkipWhileCovered()
+	{
+		if (_layer == null || !_layer.Covered) return false;
+		DateTime now = DateTime.UtcNow;
+		if ((now - _lastCoveredUi).TotalSeconds < 5.0) return true;
+		_lastCoveredUi = now;
+		return false;
+	}
+
 	private void OnSample(Sample s)
 	{
 		base.Dispatcher.BeginInvoke((Action)delegate
 		{
+			// 被全屏窗口盖住时基本停摆：分层窗口任何一次失效都要整窗重新合成
+			if (SkipWhileCovered()) return;
 			if (_metricRows.TryGetValue("cpu", out var value))
 			{
 				value.Set(s.Cpu, (s.Cpu >= 85.0) ? Theme.Warn : Theme.Text);
@@ -1642,16 +1669,46 @@ public sealed class MainWindow : Window
 
 	private void ReloadStartup()
 	{
+		// 扫描要遍历 110 个 AppModel family 的注册表（实测 100~200ms），不能放在 UI 线程上。
+		// 以前是每 20 秒同步跑一次 —— 全屏看视频时就是一个很规律的周期性卡顿。
+		if (_startupBusy) return;
+		_startupBusy = true;
+
+		Task.Run(delegate
+		{
+			List<StartupItem> list;
+			try
+			{
+				list = StartupStore.Load();
+			}
+			catch
+			{
+				list = new List<StartupItem>();
+			}
+			base.Dispatcher.BeginInvoke((Action)delegate
+			{
+				_startupBusy = false;
+				ApplyStartupList(list);
+			});
+		});
+	}
+
+	/// <summary>内容没变就一个控件都不碰，更不会把用户的滚动位置顶回顶部。</summary>
+	private void ApplyStartupList(List<StartupItem> list)
+	{
+		var sig = new System.Text.StringBuilder();
+		foreach (StartupItem it in list)
+		{
+			sig.Append(it.Name).Append('\u0001').Append(it.Source).Append('\u0001')
+				.Append(it.Enabled ? '1' : '0').Append('\u0002');
+		}
+		string key = sig.ToString();
+		if (key == _startupSig) return;
+		_startupSig = key;
+
+		double keepOffset = _startupScroll?.VerticalOffset ?? 0.0;
+
 		_startupList.Children.Clear();
-		List<StartupItem> list;
-		try
-		{
-			list = StartupStore.Load();
-		}
-		catch
-		{
-			list = new List<StartupItem>();
-		}
 		foreach (StartupItem item in list)
 		{
 			StartupItem captured = item;
@@ -1688,7 +1745,10 @@ public sealed class MainWindow : Window
 			});
 		}
 
-		_startupScroll?.ScrollToTop();
+		if (keepOffset > 0.5)
+		{
+			_startupScroll?.ScrollToVerticalOffset(keepOffset);
+		}
 	}
 
 	private void ShowStartupAddMenu(UIElement anchor)

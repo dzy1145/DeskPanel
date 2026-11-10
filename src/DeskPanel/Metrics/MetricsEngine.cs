@@ -44,8 +44,15 @@ internal sealed class MetricsEngine : IDisposable
     private int _tick;
     private double _lastGpu;
     private double? _gpuTemp, _gpuPower, _fan;
+    private DateTime _lastSuspended = DateTime.MinValue;
 
     public event Action<Sample> Sampled;
+
+    /// <summary>
+    /// 返回 true 就跳过这一轮采集。面板被全屏窗口完全盖住时没人看，
+    /// 每秒的 PDH / NVML / 卷查询也就没必要跑。（从采集线程调用，只能读线程安全的状态。）
+    /// </summary>
+    public Func<bool> Suspended;
 
     public MetricsEngine(int periodMs, List<string> driveLetters)
     {
@@ -96,6 +103,14 @@ internal sealed class MetricsEngine : IDisposable
         if (_disposed) return;
         try
         {
+            // 被全屏窗口盖住时降到 5 秒一轮：UI 那边也是 5 秒兜底刷一次，两边对得上。
+            // PDH 速率计数器靠相邻两次采集算差分，降频后恢复的第一轮会读到 0，下一轮即正常。
+            if (Suspended?.Invoke() == true)
+            {
+                DateTime now = DateTime.UtcNow;
+                if ((now - _lastSuspended).TotalSeconds < 5.0) return;
+                _lastSuspended = now;
+            }
             // GPU 的 PDH 数组枚举比 CPU 贵，2 秒取一次，中间沿用上次值
             if ((_tick++ & 1) == 0)
             {

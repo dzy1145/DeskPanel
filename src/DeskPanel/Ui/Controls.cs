@@ -29,17 +29,24 @@ internal sealed class Bar : FrameworkElement
 
     public void SetTarget(double pct)
     {
-        _target = Math.Max(0, Math.Min(100, pct));
+        double next = Math.Max(0, Math.Min(100, pct));
 
         if (!_initialized)
         {
             _initialized = true;
-            _value = _target;
+            _target = next;
+            _value = next;
             _velocity = 0;
             InvalidateVisual();
             Animated?.Invoke(_value);
             return;
         }
+
+        // 目标没实质变化就别重启弹簧。面板是分层窗口：任何一帧失效都会让整个
+        // 329×1104 DIP 的窗口重新做一次软件合成，一秒一次的无谓动画足够把单核吃掉几个点。
+        if (Math.Abs(next - _target) < 0.5) return;
+
+        _target = next;
 
         if (!_running)
         {
